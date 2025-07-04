@@ -1,0 +1,33 @@
+# Configuration for Fair LoRA training on medical images
+
+dataset:
+  type: chest_xray
+  data_dir: /path/to/chexray/images
+  metadata_path: /path/to/chexray/metadata.csv
+  image_size: 224
+  num_classes: 2
+  demographic_key: demographic
+  label_cols: ["Pneumonia"]
+  demographic_groups: ["African_American", "Asian", "Caucasian", "Hispanic", "Other"]
+
+model:
+  type: llm
+  name: meta-llama/Llama-2-7b-hf
+
+fair_lora:
+  r: 16  # Rank of the low-rank matrices
+  alpha: 32.0  # Scaling factor
+  dropout: 0.1  # Dropout probability
+  target_modules: ["query", "key", "value", "dense", "attention", "mlp"]
+  bias: "none"  # Bias type: "none", "all", or "lora_only"
+  equity_weight: 0.7  # Weight for the equity component in the loss
+
+training:
+  learning_rate: 5e-5
+  weight_decay: 0.01
+  num_epochs: 5
+  warmup_steps: 100
+  batch_size: 32
+  mixed_precision: true
+  evaluation_steps: 100
+  save_steps: 500

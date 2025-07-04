@@ -1,0 +1,29 @@
+# Configuration for CheXRay dataset evaluation
+
+dataset:
+  type: chest_xray
+  data_dir: /path/to/chexray/images
+  metadata_path: /path/to/chexray/metadata.csv
+  image_size: 224
+  num_classes: 2
+  demographic_key: demographic
+  label_cols: ["Pneumonia"]
+  demographic_groups: ["African_American", "Asian", "Caucasian", "Hispanic", "Other"]
+
+models:
+  specialized:
+    chexnet:
+      name: stanford-aimi/chexnet
+    densenet:
+      name: microsoft/BiomedCLIP-PubMedBERT_256-vit_base_patch16_224
+    
+  llm:
+    llama:
+      name: meta-llama/Llama-2-7b-hf
+      use_clip: true
+    grok:
+      name: xai-org/grok-1
+      use_clip: true
+    gpt:
+      name: openai/gpt-4-vision-preview
+      use_clip: true
