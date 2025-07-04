@@ -2,7 +2,6 @@
 
 ## Evaluating and Enhancing Large Language Models (LLMs) for Fair and Accurate Medical Image Diagnosis
 
-![Project Banner](docs/images/banner.png)
 
 ## Overview
 
@@ -14,13 +13,13 @@ This research project aims to address the growing concern of using general-purpo
 
 ## Key Features
 
-- **Comparative Benchmarking**: Rigorous evaluation of general LLMs vs. specialized medical AI models
-- **Bias Detection**: Comprehensive analysis of model performance across demographic groups
-- **Fair LoRA Implementation**: Novel approach to parameter-efficient fine-tuning that addresses demographic bias
-- **Equity-Focused Metrics**: Implementation of equity-scaled evaluation metrics
-- **Adversarial Fairness**: Innovative adversarial training approach to remove demographic information from representations
-- **Counterfactual Fairness**: Causal intervention techniques to ensure invariant predictions across demographic groups
-- **Multi-Modal Contrastive Learning**: Integration of clinical text and image data with fairness-aware contrastive objectives
+- **Comparative Benchmarking**. Rigorous evaluation of general LLMs vs. specialized medical AI models
+- **Bias Detection**. Comprehensive analysis of model performance across demographic groups
+- **Fair LoRA Implementation**. Novel approach to parameter-efficient fine-tuning that addresses demographic bias
+- **Equity-Focused Metrics**. Implementation of equity-scaled evaluation metrics
+- **Adversarial Fairness**. Innovative adversarial training approach to remove demographic information from representations
+- **Counterfactual Fairness**. Causal intervention techniques to ensure invariant predictions across demographic groups
+- **Multi-Modal Contrastive Learning**. Integration of clinical text and image data with fairness-aware contrastive objectives
 
 ## Project Structure
 
@@ -98,7 +97,7 @@ python experiments/integrated_fairness_training.py --config configs/integrated_f
 
 This project utilizes three primary datasets:
 
-1. **CheXRay Dataset**: Chest X-rays with labels for conditions like pneumonia, pleural effusion, and atelectasis
+1. **CheXRay Dataset (NOTE: subject to change)**: Chest X-rays with labels for conditions like pneumonia, pleural effusion, and atelectasis
 2. **Pathology Image Dataset**: Histopathological slides for malignant vs. benign tissue recognition
 3. **Retinal Image Dataset**: Retinal photographs for detecting conditions like diabetic retinopathy
 
@@ -106,27 +105,14 @@ This project utilizes three primary datasets:
 
 This project implements several innovative fairness approaches:
 
-1. **Fair LoRA**: Our base approach that uses demographic-specific scaling matrices with shared low-rank matrices to adapt LLMs for fairness.
+1. Fair LoRA. Our base approach that uses demographic-specific scaling matrices with shared low-rank matrices to adapt LLMs for fairness.
 
-2. **Adversarial Fairness**: Implements a gradient reversal layer and demographic adversary to remove demographic information from learned representations.
+2. Adversarial Fairness. Implements a gradient reversal layer and demographic adversary to remove demographic information from learned representations.
 
-3. **Counterfactual Fairness**: Generates counterfactual examples by modifying demographic-specific features in medical images, ensuring predictions remain invariant under counterfactual interventions.
+3. Counterfactual Fairness. Generates counterfactual examples by modifying demographic-specific features in medical images, ensuring predictions remain invariant under counterfactual interventions.
 
-4. **Multi-Modal Contrastive Fairness**: Integrates clinical text with medical images using contrastive learning with fairness constraints, ensuring fair representations across modalities.
+4. Multi-Modal Contrastive Fairness. Integrates clinical text with medical images using contrastive learning with fairness constraints, ensuring fair representations across modalities.
 
-## Citation
-
-If you use this code in your research, please cite our paper:
-
-```
-@article{fairllm2025,
-  title={Enhancing Large Language Models for Fair Medical Image Diagnosis: A Multi-Approach Fairness Framework},
-  author={[Author List]},
-  journal={Nature},
-  year={2025},
-  publisher={Nature Publishing Group}
-}
-```
 
 ## License
 
