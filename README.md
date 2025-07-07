@@ -2,7 +2,6 @@
 
 ## Evaluating and Enhancing Large Language Models (LLMs) for Fair and Accurate Medical Image Diagnosis
 
-
 ## Overview
 
 This research project aims to address the growing concern of using general-purpose Large Language Models (LLMs) for medical image diagnosis without proper validation or regulatory approval. The project introduces a comprehensive framework to:
@@ -60,7 +59,7 @@ fair-llm-medical-diagnosis/
 
 ```bash
 # Clone the repository
-git clone https://github.com/harvard-research/fair-llm-medical-diagnosis.git
+git clone https://github.com/Todd7777/fair-llm-medical-diagnosis/
 cd fair-llm-medical-diagnosis
 
 # Create and activate a virtual environment
@@ -112,7 +111,6 @@ This project implements several innovative fairness approaches:
 3. Counterfactual Fairness. Generates counterfactual examples by modifying demographic-specific features in medical images, ensuring predictions remain invariant under counterfactual interventions.
 
 4. Multi-Modal Contrastive Fairness. Integrates clinical text with medical images using contrastive learning with fairness constraints, ensuring fair representations across modalities.
-
 
 ## License
 
