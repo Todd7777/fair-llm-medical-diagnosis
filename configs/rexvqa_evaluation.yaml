@@ -1,0 +1,29 @@
+# Configuration for CheXRay dataset evaluation
+
+dataset:
+  type: rexvqa
+  data_dir: data/rexvqa/image_data/deid_png
+  metadata_path: data/rexvqa/metadata_qa_ReXVQA/metadata/test_vqa_data.json
+  image_size: 224
+  num_classes: 2
+  demographic_key: demographic 
+  label_cols: ["Pneumonia"]
+  demographic_groups: ["African_American", "Asian", "Caucasian", "Hispanic", "Other"]
+
+models:
+  specialized:
+    chexnet:
+      name: stanford-aimi/chexnet
+    densenet:
+      name: microsoft/BiomedCLIP-PubMedBERT_256-vit_base_patch16_224
+    
+  llm:
+    llama:
+      name: meta-llama/Llama-2-7b-hf
+      use_clip: true
+    grok:
+      name: xai-org/grok-1
+      use_clip: true
+    gpt:
+      name: openai/gpt-4-vision-preview
+      use_clip: true
