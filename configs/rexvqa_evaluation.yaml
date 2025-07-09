@@ -1,13 +1,13 @@
-# Configuration for CheXRay dataset evaluation
+# Configuration for ReXVQA dataset evaluation
 
 dataset:
   type: rexvqa
   data_dir: data/rexvqa/image_data/deid_png
   metadata_path: data/rexvqa/metadata_qa_ReXVQA/metadata/test_vqa_data.json
   image_size: 224
-  num_classes: 2
-  demographic_key: demographic 
-  label_cols: ["Pneumonia"]
+  num_classes: 4
+  demographic_key: EthnicGroup 
+  label_cols: ["correct_answer"]
   demographic_groups: ["African_American", "Asian", "Caucasian", "Hispanic", "Other"]
 
 models:
