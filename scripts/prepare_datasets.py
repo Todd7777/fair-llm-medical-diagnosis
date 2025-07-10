@@ -25,7 +25,7 @@ def parse_args():
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(description="Prepare medical image datasets")
     
-    parser.add_argument("--dataset", type=str, required=True, choices=["chexray", "pathology", "retinal", "rexvqa", "all"],
+    parser.add_argument("--dataset", type=str, required=True, choices=["chexray", "pathology", "retinal", "all"],
                         help="Dataset to prepare")
     parser.add_argument("--output_dir", type=str, default="data", help="Directory to save datasets")
     parser.add_argument("--download", action="store_true", help="Whether to download the datasets")
@@ -478,50 +478,6 @@ def prepare_retinal_dataset(args):
     
     print("Retinal dataset preparation complete.")
 
-def prepare_rexvqa_dataset(args):
-    """Prepare ReXVQA dataset (format JSON into one CSV per split if needed)."""
-    dataset_dir = os.path.join(args.output_dir, "rexvqa")
-    os.makedirs(dataset_dir, exist_ok=True)
-
-    # Skip download — data is already available via symbolic link
-    if args.preprocess:
-        print("Preprocessing ReXVQA dataset...")
-
-        json_dir = os.path.join(dataset_dir, "metadata_qa_ReXVQA", "metadata")
-        splits = ["train", "valid", "test"]
-        for split in splits:
-            json_path = os.path.join(json_dir, f"{split}_vqa_data.json")
-            if not os.path.exists(json_path):
-                print(f"Missing {split} JSON: {json_path}")
-                continue
-
-            print(f"Processing {split} split...")
-            with open(json_path, "r") as f:
-                data = json.load(f)
-
-            records = []
-            for k, v in data.items():
-                image_path = v["ImagePath"][0].replace("..", "image_data").lstrip("/")
-                label = ord(v["correct_answer"]) - ord("A")
-                demographic = v.get("EthnicGroup", "unknown")
-                records.append({
-                    "image_path": image_path,
-                    "label": label,
-                    "demographic": demographic,
-                    "study_id": v["study_id"],
-                    "question": v["question"],
-                    "answer": v["correct_answer"],
-                    "split": split,
-                })
-
-            df = pd.DataFrame(records)
-            csv_path = os.path.join(dataset_dir, f"{split}.csv")
-            df.to_csv(csv_path, index=False)
-            print(f"Saved: {csv_path}")
-
-    print("ReXVQA preprocessing complete.")
-
-
 def main():
     """Main function."""
     # Parse arguments
@@ -539,9 +495,6 @@ def main():
     
     if args.dataset == "retinal" or args.dataset == "all":
         prepare_retinal_dataset(args)
-
-    if args.dataset == "rexvqa" or args.dataset == "all":
-        prepare_rexvqa_dataset(args)
     
     print("Dataset preparation complete.")
 
