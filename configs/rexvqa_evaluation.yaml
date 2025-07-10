@@ -14,7 +14,7 @@ models:
   specialized:
     chexnet:
       name: stanford-aimi/chexnet
-    densenet:
+    biomed_clip:
       name: microsoft/BiomedCLIP-PubMedBERT_256-vit_base_patch16_224
     
   llm:
