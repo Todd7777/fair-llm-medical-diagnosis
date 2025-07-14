@@ -37,8 +37,6 @@ ENV/
 .ipynb_checkpoints
 
 # Data
-data/*
-!data/.gitkeep
 
 # Logs and results
 logs/
