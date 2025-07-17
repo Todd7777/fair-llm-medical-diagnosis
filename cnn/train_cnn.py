@@ -7,6 +7,7 @@ import cnn_dataloaders
 from tqdm import tqdm
 import os
 import yaml
+import argparse
 
 
 # potentially use argparse to make optional arguments to pick exactly where to save model weights and whatever else
@@ -15,6 +16,29 @@ def load_config(path):
         return yaml.safe_load(f)
 
 
+# the values that should be changed, yaml values shouldnt be an option under normal circumstances
+def parse_args():
+    parser = argparse.ArgumentParser(description="Test CNN with configurable paths")
+    parser.add_argument(
+        "--weights_dir", required=True, help="Directory containing model weights"
+    )
+    parser.add_argument(
+        "--img_dir", required=True, help="Directory containing image data"
+    )
+    parser.add_argument(
+        "--metadata_path", required=True, help="Path containing metadata"
+    )
+    parser.add_argument("--model_name", required=True, help="Model name in yaml config")
+    parser.add_argument(
+        "--num_epochs",
+        type=int,
+        required=True,
+        help="Number of training epochs, validation happens every epoch",
+    )
+    return parser.parse_args()
+
+
+args = parse_args()
 config = load_config("cnn_configs.yaml")
 
 
@@ -23,20 +47,25 @@ config = load_config("cnn_configs.yaml")
 class train_cnn:
     def __init__(
         self,
-        model_name,
     ):
-        self.name = config[model_name]["name"]
+        self.name = args.model_name
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.lr = config[model_name]["lr"]
+        self.lr = config[self.name]["lr"]
         self.criterion = nn.CrossEntropyLoss()
-        self.train_loader, self.eval_loader = cnn_dataloaders.make_cnn_dataloaders(
-            config[model_name]["data_dir"],
-            config[model_name]["metadata_path"],
-            config[model_name]["batch_size"],
+        self.train_loader = cnn_dataloaders.make_cnn_dataloader(
+            "train",
+            args.img_dir,
+            args.metadata_path,
+            config[self.name]["batch_size"],
+        )
+        self.eval_loader = cnn_dataloaders.make_cnn_dataloader(
+            "eval",
+            args.img_dir,
+            args.metadata_path,
+            config[self.name]["batch_size"],
         )
 
         num_classes = self.train_loader.dataset.get_num_classes()  # type: ignore as all the datasets have get_num_classes
-
         if self.name == "efficientnet":
             self.model = self._build_efficientnet(num_classes)
         elif self.name == "someothernet":
@@ -46,11 +75,6 @@ class train_cnn:
         model = models.efficientnet_b0(weights="DEFAULT")
         # this efficientnet has 1280 features
         in_features = model.classifier[1].in_features
-
-        print(model.classifier)
-        print(model.classifier[1])
-        print(type(model.classifier[1]))
-
         model.classifier[1] = nn.Linear(in_features, num_classes)  # type: ignore as it is a sequential, able to be indexed
 
         self.optimizer = torch.optim.Adam(model.parameters(), lr=self.lr)
@@ -66,12 +90,13 @@ class train_cnn:
         return model.to(self.device)
 
     def save_model(self):
-        os.makedirs("cnn_weights", exist_ok=True)
-        path = os.path.join("cnn_weights", f"{self.name}_fine_tuned.pt")
+        os.makedirs(args.weights_dir, exist_ok=True)
+        path = os.path.join(args.weights_dir, f"{self.name}_fine_tuned.pt")
         torch.save(self.model.state_dict(), path)
         print(f"Model saved to {path}")
 
-    def train(self, num_epochs=10):
+    def train(self):
+        num_epochs = args.num_epochs
         self.model.train()
 
         for epoch in range(num_epochs):
@@ -84,9 +109,9 @@ class train_cnn:
             ):
                 inputs, labels = inputs.to(self.device), labels.to(self.device)
 
-                self.optimizer.zero_grad()
                 outputs = self.model(inputs)  # forward pass
                 loss = self.criterion(outputs, labels)
+                self.optimizer.zero_grad()
                 loss.backward()
                 self.optimizer.step()
 
@@ -122,11 +147,10 @@ class train_cnn:
         self.model.train()
 
 
-def run_training(cnn_name):
-    new_train = train_cnn(cnn_name)
+def run_training():
+    new_train = train_cnn()
     new_train.train()
     new_train.save_model()
 
 
-cnn_name = "efficientnet"
-run_training(cnn_name)
+run_training()
