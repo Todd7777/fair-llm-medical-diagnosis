@@ -22,14 +22,20 @@ def make_cnn_dataloaders(data_dir, metadata_path, batch_size):
 
     # Any PyTorch Dataset class that implements the __getitem__ and __len__ methods can be passed into a DataLoader
     # Maybe i should use ImageFolder if it works
-
+    data_dir_train = ""
+    data_dir_eval = ""
     train_dataset = datasets.RetinalImageDataset(
-        data_dir,
+        data_dir_train,
         metadata_path,
         transform,
         split=None,
     )
-    eval_dataset = None
+    eval_dataset = datasets.RetinalImageDataset(
+        data_dir_eval,
+        metadata_path,
+        transform,
+        split=None,
+    )
 
     train_loader = datasets.create_data_loader(
         dataset=train_dataset, batch_size=batch_size, shuffle=True, num_workers=4

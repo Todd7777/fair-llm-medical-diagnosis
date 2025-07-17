@@ -5,6 +5,17 @@ import torch.nn as nn
 import torchvision.models as models
 import cnn_dataloaders
 from tqdm import tqdm
+import os
+import yaml
+
+
+# potentially use argparse to make optional arguments to pick exactly where to save model weights and whatever else
+def load_config(path):
+    with open(path, "r") as f:
+        return yaml.safe_load(f)
+
+
+config = load_config("cnn_configs.yaml")
 
 
 # using adam as optimizing alg
@@ -12,26 +23,24 @@ from tqdm import tqdm
 class train_cnn:
     def __init__(
         self,
-        name,
-        data_dir,
-        metadata_path,
-        num_classes,
-        batch_size=64,
-        lr=0.001,
+        model_name,
     ):
-        self.name = name
+        self.name = config[model_name]["name"]
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.lr = lr
+        self.lr = config[model_name]["lr"]
         self.criterion = nn.CrossEntropyLoss()
-        self.num_classes = num_classes
-        if name == "efficientnet":
-            self.model = self._build_efficientnet(num_classes)
-        elif name == "someothernet":
-            self.model = self._build_someothernet(num_classes)
-
         self.train_loader, self.eval_loader = cnn_dataloaders.make_cnn_dataloaders(
-            data_dir, metadata_path, batch_size
+            config[model_name]["data_dir"],
+            config[model_name]["metadata_path"],
+            config[model_name]["batch_size"],
         )
+
+        num_classes = self.train_loader.dataset.get_num_classes()  # type: ignore as all the datasets have get_num_classes
+
+        if self.name == "efficientnet":
+            self.model = self._build_efficientnet(num_classes)
+        elif self.name == "someothernet":
+            self.model = self._build_someothernet(num_classes)
 
     def _build_efficientnet(self, num_classes):
         model = models.efficientnet_b0(weights="DEFAULT")
@@ -48,7 +57,7 @@ class train_cnn:
         return model.to(self.device)
 
     def _build_someothernet(self, num_classes):
-        model = models.efficientnet_b0(weights="DEFAULT")
+        model = models.efficientnet_b0(weights="DEFAULT")  # find the right other cnn
         # this efficientnet has 1280 features
         in_features = model.classifier[1].in_features
         model.classifier[1] = nn.Linear(in_features, num_classes)  # type: ignore as it is sequential, able to be indexed
@@ -57,7 +66,8 @@ class train_cnn:
         return model.to(self.device)
 
     def save_model(self):
-        path = f"{self.name}.pth"  # TODO: join directory to it
+        os.makedirs("cnn_weights", exist_ok=True)
+        path = os.path.join("cnn_weights", f"{self.name}_fine_tuned.pt")
         torch.save(self.model.state_dict(), path)
         print(f"Model saved to {path}")
 
@@ -110,3 +120,13 @@ class train_cnn:
         acc = 100 * correct / total
         print(f"Validation Accuracy: {acc:.2f}%")
         self.model.train()
+
+
+def run_training(cnn_name):
+    new_train = train_cnn(cnn_name)
+    new_train.train()
+    new_train.save_model()
+
+
+cnn_name = "efficientnet"
+run_training(cnn_name)

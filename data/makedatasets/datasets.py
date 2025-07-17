@@ -23,6 +23,9 @@ class ChestXRayDataset(Dataset):
     def __getitem__(self, idx):
         pass
 
+    def get_num_classes(self):
+        pass
+
 
 class PathologyImageDataset(Dataset):
     def __init__(
@@ -40,6 +43,9 @@ class PathologyImageDataset(Dataset):
         pass
 
     def __getitem__(self, idx):
+        pass
+
+    def get_num_classes(self):
         pass
 
 
@@ -69,6 +75,9 @@ class RetinalImageDataset(Dataset):
             "label": label,
             "demographic": demographic,
         }  # def something diff
+
+    def get_num_classes(self):
+        return len(self.metadata["label"].unique())
 
 
 def create_data_loader(dataset, batch_size, num_workers, shuffle):
