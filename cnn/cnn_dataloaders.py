@@ -7,7 +7,7 @@ import data.makedatasets.datasets as datasets
 
 
 # can split up into 2 dirs for train and val
-def make_dataloaders(data_dir, metadata_path, batch_size):
+def make_cnn_dataloaders(data_dir, metadata_path, batch_size):
     transform = transforms.Compose(  # img preprocess pipeline
         [
             transforms.Resize(256),
