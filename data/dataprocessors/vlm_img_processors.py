@@ -1,12 +1,27 @@
-import fundus_image_toolbox as fit
+# import fundus_image_toolbox as fit
 import numpy as np
 from PIL import Image
+from torchvision import transforms
 
 
 # all for transform parameter of PyTorch dataloader
 class chest_xray_img_processor:
-    # process img similar to below
-    pass
+    def __init__(self, target_size=(224, 224), normalize=True):
+        self.target_size = target_size
+        self.normalize = normalize
+
+        mean = [0.485, 0.456, 0.406]
+        std = [0.229, 0.224, 0.225]   # ImageNet means and stds, but i'll get the dataset-specific ones later
+
+        self.transform = transforms.Compose([
+            transforms.Resize(self.target_size),
+            transforms.CenterCrop(self.target_size),
+            transforms.ToTensor(),
+            transforms.Normalize(mean, std) if self.normalize else transforms.Lambda(lambda x: x)
+        ])
+
+    def img_process(self, img):
+        return self.transform(img)  # expects PIL image
 
 
 class pathology_img_processor:

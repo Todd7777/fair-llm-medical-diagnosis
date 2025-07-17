@@ -8,20 +8,42 @@ from torch.utils.data import Dataset
 # chexpert is already in a dataframe format
 class ChestXRayDataset(Dataset):
     def __init__(
-        self, data_dir, metadata_path, transform, split, demographic_key, label_col
+        self, data_dir, metadata_path, transform=None, split=None, demographic_key='Sex', label_cols=None
     ):
+        self.metadata = pd.read_csv(metadata_path)
+        if split:
+            self.metadata = self.metadata[self.metadata["split"] == split]
         self.data_dir = data_dir
-        self.metadata_path = metadata_path
         self.transform = transform
         self.split = split
         self.demographic_key = demographic_key
-        self.label_col = label_col
+        self.label_cols = label_cols or [
+            "Enlarged Cardiomediastinum", "Cardiomegaly", "Lung Opacity",
+            "Lung Lesion", "Edema", "Consolidation", "Pneumonia", "Atelectasis",
+            "Pneumothorax", "Pleural Effusion", "Pleural Other", "Fracture",
+            "Support Devices", "No Finding"
+        ]
 
     def __len__(self):
-        pass
+        return len(self.metadata)
 
     def __getitem__(self, idx):
-        pass
+        row = self.metadata.iloc[idx]
+        img_path = os.path.join(self.data_dir, row["Path"])
+        image = Image.open(img_path).convert("RGB")
+
+        if self.transform:
+            image = self.transform(image)
+
+        label = row[self.label_cols].astype(float).values
+        demographic = row.get(self.demographic_key, "unknown")
+
+        return {
+            "image": image,
+            "label": label,
+            "demographic": demographic,
+            "path": row["Path"]
+        }
 
 
 class PathologyImageDataset(Dataset):
