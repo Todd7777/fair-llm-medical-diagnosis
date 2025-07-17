@@ -29,7 +29,7 @@ class train_cnn:
         elif name == "someothernet":
             self.model = self._build_someothernet(num_classes)
 
-        self.train_loader, self.eval_loader = cnn_dataloaders.make_dataloaders(
+        self.train_loader, self.eval_loader = cnn_dataloaders.make_cnn_dataloaders(
             data_dir, metadata_path, batch_size
         )
 
