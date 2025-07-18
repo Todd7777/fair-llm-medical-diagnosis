@@ -70,6 +70,30 @@ source venv/bin/activate  # On Windows: venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
+## Benchmarking LLMs & VLMs
+
+The repository now includes a unified medical‐imaging benchmarking script that evaluates vision, vision-language, and multimodal cloud models on chest X-ray and retinal datasets.
+
+```bash
+# Example: local open-weight models
+python scripts/benchmark_llms.py \
+  --config configs/llm_benchmark.yaml \
+  --vision-models chexpert_densenet121 biomedclip_vit_base \
+  --text-models biogpt_large
+
+# Example: include cloud multimodal models (set API keys first)
+export OPENAI_API_KEY="<your key>"
+export ANTHROPIC_API_KEY="<your key>"
+python scripts/benchmark_llms.py \
+  --config configs/llm_benchmark.yaml \
+  --vision-models llava_v1_5_13b \
+  --text-models chatgpt_gpt4v claude_opus_vision
+```
+
+Results, metrics and visualisations are saved to `results/medical_imaging_benchmarks/`.
+
+---
+
 ## Getting Started
 
 ### Data Preparation

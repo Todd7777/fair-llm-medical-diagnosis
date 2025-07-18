@@ -98,6 +98,26 @@ SUPPORTED_MODELS = {
         "is_local": True,
         "description": "PubMedGPT – language model trained solely on PubMed abstracts",
     },
+
+    # ------------------------------------------------------------------
+    # Cloud/API multimodal LLMs (requires external API keys)
+    # ------------------------------------------------------------------
+    "chatgpt_gpt4v": {
+        "type": "api",
+        "model_name": "gpt-4o-mini",  # GPT-4o Vision endpoint
+        "provider": "openai",
+        "api_base": "https://api.openai.com/v1",
+        "api_key_env": "OPENAI_API_KEY",
+        "description": "GPT-4o with vision (multimodal). Requires OpenAI API key.",
+    },
+    "claude_opus_vision": {
+        "type": "api",
+        "model_name": "claude-3-opus-20240229",
+        "provider": "anthropic",
+        "api_base": "https://api.anthropic.com",
+        "api_key_env": "ANTHROPIC_API_KEY",
+        "description": "Claude 3 Opus with vision. Requires Anthropic API key.",
+    },
 }
 
 class MedicalImagingBenchmarker:
@@ -257,6 +277,8 @@ class MedicalImagingBenchmarker:
                 return self._load_vision_model(model_name, model_config)
             elif model_type == "text":
                 return self._load_text_model(model_name, model_config)
+            elif model_type == "api":
+                return self._load_api_model(model_name, model_config)
             else:
                 raise ValueError(f"Unsupported model type: {model_type}")
         except Exception as e:
@@ -312,6 +334,31 @@ class MedicalImagingBenchmarker:
             )
             
             return {"model": model, "processor": processor, "type": "vision_language"}
+    
+    def _load_api_model(self, model_name: str, model_config: Dict):
+        """Initialize an API-based multimodal LLM client."""
+        provider = model_config.get("provider")
+        api_key = model_config.get("api_key")
+        if not api_key:
+            raise RuntimeError(
+                f"API key for {model_name} not found. Set {model_config['api_key_env']} in environment variables."
+            )
+        if provider == "openai":
+            try:
+                from openai import OpenAI
+                client = OpenAI(api_key=api_key, base_url=model_config.get("api_base"))
+                return {"client": client, "model_name": model_config["model_name"], "type": "api", "provider": "openai"}
+            except Exception as e:
+                raise RuntimeError(f"Failed to initialize OpenAI client: {str(e)}")
+        elif provider == "anthropic":
+            try:
+                from anthropic import Anthropic
+                client = Anthropic(api_key=api_key, base_url=model_config.get("api_base"))
+                return {"client": client, "model_name": model_config["model_name"], "type": "api", "provider": "anthropic"}
+            except Exception as e:
+                raise RuntimeError(f"Failed to initialize Anthropic client: {str(e)}")
+        else:
+            raise ValueError(f"Unsupported API provider: {provider}")
     
     def _load_text_model(self, model_name: str, model_config: Dict):
         """Load a text-based model."""
@@ -541,9 +588,47 @@ class MedicalImagingBenchmarker:
         pass
     
     def _forward_api_model(self, model_info: Dict, batch: Dict) -> Dict:
-        """Forward pass for API-based models."""
-        # Implement API model inference
-        pass
+        """Forward pass for API-based models (OpenAI, Anthropic)."""
+        client = model_info["client"]
+        provider = model_info["provider"]
+        model_name = model_info["model_name"]
+        images = batch["image"]  # Tensor BxCxhxw
+        # For demo purposes we take first image from batch
+        # Real implementation should loop over batch and send each image – beware of rate limits and costs.
+        import base64, io
+        from PIL import Image
+        generated_texts = []
+        from torchvision import transforms  # Lazy import to avoid dependency for text-only runs
+        for img_tensor in images:
+            pil_img = transforms.ToPILImage()(img_tensor.cpu())
+            buffered = io.BytesIO()
+            pil_img.save(buffered, format="PNG")
+            img_b64 = base64.b64encode(buffered.getvalue()).decode()
+            prompt = "Identify any abnormalities in this retinal/chest image. Respond with JSON {\"labels\": [...]}"
+            if provider == "openai":
+                response = client.chat.completions.create(
+                    model=model_name,
+                    messages=[
+                        {"role": "user", "content": [
+                            {"type": "text", "text": prompt},
+                            {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{img_b64}"}}
+                        ]}
+                    ],
+                    max_tokens=256
+                )
+                generated_texts.append(response.choices[0].message.content)
+            elif provider == "anthropic":
+                response = client.messages.create(
+                    model=model_name,
+                    max_tokens=256,
+                    messages=[
+                        {"role": "user", "content": prompt},
+                        {"role": "user", "content": {"type": "image", "source": {"media_type": "image/png", "data": img_b64}}}
+                    ]
+                )
+                generated_texts.append(response.content[0].text)
+        return {"generated_texts": generated_texts}
+
     
     def _process_outputs(self, outputs: Dict, model_info: Dict) -> Dict:
         """Process model outputs into predictions and confidences."""
@@ -555,13 +640,11 @@ class MedicalImagingBenchmarker:
                 "probs": probs,
                 "attention_maps": outputs.get("attention")
             }
-        elif model_info["type"] == "vision_language":
+        elif model_info["type"] in ["vision_language", "api"]:
             # Process generated text into structured outputs
-            # This is a placeholder - you'll need to implement text parsing
-            # based on your specific task and model outputs
             return {
-                "generated_texts": outputs["generated_texts"],
-                "logits": outputs["logits"],
+                "generated_texts": outputs.get("generated_texts"),
+                "logits": outputs.get("logits"),
                 "attention_maps": outputs.get("attention")
             }
         return {}
