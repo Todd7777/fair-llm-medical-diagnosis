@@ -73,15 +73,22 @@ class test_cnn:
             self.model = self._build_efficientnet(num_classes)
 
     def _build_efficientnet(self, num_classes):
-        model = models.efficientnet_b0()
-        in_features = model.classifier[1].in_features
-        model.classifier[1] = nn.Linear(in_features, num_classes)  # type: ignore as it is a sequential, able to be indexed
-        model.load_state_dict(
-            torch.load(
-                os.path.join(args.weights_dir, f"{self.name}_fine_tuned.pt"),
-                map_location=self.device,
+        zero_shot = False
+        if zero_shot:
+            model = models.efficientnet_b0(weights="DEFAULT")
+            in_features = model.classifier[1].in_features
+            model.classifier[1] = nn.Linear(in_features, num_classes)  # type: ignore as it is a sequential, able to be indexed
+        else:
+            model = models.efficientnet_b0()
+            in_features = model.classifier[1].in_features
+            model.classifier[1] = nn.Linear(in_features, num_classes)  # type: ignore as it is a sequential, able to be indexed
+            model.load_state_dict(
+                torch.load(
+                    os.path.join(args.weights_dir, f"{self.name}_fine_tuned.pt"),
+                    map_location=self.device,
+                )
             )
-        )
+
         model.eval()
         return model.to(self.device)
 
