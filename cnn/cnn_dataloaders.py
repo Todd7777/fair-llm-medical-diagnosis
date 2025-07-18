@@ -7,7 +7,7 @@ import data.makedatasets.datasets as datasets
 
 
 # can split up into 2 dirs for train and val
-def make_cnn_dataloaders(data_dir, metadata_path, batch_size):
+def make_cnn_dataloader(data_args, dataset_class, batch_size):
     transform = transforms.Compose(  # img preprocess pipeline
         [
             transforms.Resize(256),
@@ -20,27 +20,15 @@ def make_cnn_dataloaders(data_dir, metadata_path, batch_size):
         ]
     )
 
-    # Any PyTorch Dataset class that implements the __getitem__ and __len__ methods can be passed into a DataLoader
-    # Maybe i should use ImageFolder if it works
-    data_dir_train = ""
-    data_dir_eval = ""
-    train_dataset = datasets.RetinalImageDataset(
-        data_dir_train,
-        metadata_path,
-        transform,
-        split=None,
-    )
-    eval_dataset = datasets.RetinalImageDataset(
-        data_dir_eval,
-        metadata_path,
-        transform,
-        split=None,
-    )
+    data_args = dict(data_args)  # doesn't edit orig
 
-    train_loader = datasets.create_data_loader(
-        dataset=train_dataset, batch_size=batch_size, shuffle=True, num_workers=4
+    data_args["transform"] = transform
+
+    dataset = dataset_class(**data_args)
+
+    return datasets.create_data_loader(
+        dataset,
+        batch_size=batch_size,
+        shuffle=(data_args["dataset_type"] == "train"),
+        num_workers=4,
     )
-    eval_loader = datasets.create_data_loader(
-        dataset=eval_dataset, batch_size=batch_size, shuffle=False, num_workers=4
-    )
-    return train_loader, eval_loader

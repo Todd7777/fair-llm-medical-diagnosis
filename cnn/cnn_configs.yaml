@@ -1,10 +1,13 @@
-model:
-  name: efficientnet
+efficientnet:
+  data:
+    batch_size: 64
 
-data:
-  data_dir: /path/to/data
-  metadata_path: /path/to/metadata.csv
-  batch_size: 64
+  training:
+    lr: 0.001
 
-training:
-  lr: 0.001
+someothernet:
+  data:
+    batch_size:
+
+  training:
+    lr:

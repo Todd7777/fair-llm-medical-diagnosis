@@ -8,6 +8,11 @@ import yaml
 from tqdm import tqdm
 import argparse
 import os
+from data.makedatasets.datasets import (
+    RetinalImageDataset,
+    ChestXRayDataset,
+    PathologyImageDataset,
+)
 
 
 def load_config(path):
@@ -22,13 +27,23 @@ def parse_args():
         "--weights_dir", required=True, help="Directory containing model weights"
     )
     parser.add_argument(
-        "--img_dir", required=True, help="Directory containing image data"
+        "--data_dir", required=True, help="Directory containing image data"
     )
     parser.add_argument(
-        "--metadata_path", required=True, help="Path containing metadata"
+        "--metadata_path", required=True, help="DIRECTORY containing metadata files"
     )
     parser.add_argument("--model_name", required=True, help="Model name in config")
+    parser.add_argument(
+        "--dataset", required=True, help='"retinal", "pathology", "chestxray"'
+    )
     return parser.parse_args()
+
+
+DATASET_CLASSES = {
+    "retinal": RetinalImageDataset,
+    "pathology": PathologyImageDataset,
+    "chestxray": ChestXRayDataset,
+}
 
 
 args = parse_args()
@@ -43,10 +58,13 @@ class test_cnn:
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.lr = config[self.name]["lr"]
         self.test_loader = cnn_dataloaders.make_cnn_dataloader(
-            "test",
-            args.img_dir,
-            args.metadata_path,
-            config[self.name]["batch_size"],
+            data_args={
+                "dataset_type": "test",
+                "data_dir": args.data_dir,
+                "metadata_path": args.metadata_path,
+            },
+            dataset_class=DATASET_CLASSES[args.dataset],
+            batch_size=config[self.name]["data"]["batch_size"],
         )
 
         num_classes = self.test_loader.dataset.get_num_classes()  # type: ignore as all the datasets have get_num_classes
@@ -71,10 +89,11 @@ class test_cnn:
         total = 0
         correct = 0
         with torch.no_grad():
-            for inputs, labels in tqdm(
+            for batch in tqdm(
                 self.test_loader, desc="Testing by classifying x number of images"
             ):
-                inputs, labels = inputs.to(self.device), labels.to(self.device)
+                inputs = batch["image"].to(self.device)
+                labels = batch["label"].to(self.device)
 
                 outputs = self.model(inputs)  # forward pass
                 _, preds = torch.max(outputs, 1)

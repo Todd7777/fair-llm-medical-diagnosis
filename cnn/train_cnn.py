@@ -8,6 +8,11 @@ from tqdm import tqdm
 import os
 import yaml
 import argparse
+from data.makedatasets.datasets import (
+    RetinalImageDataset,
+    ChestXRayDataset,
+    PathologyImageDataset,
+)
 
 
 # potentially use argparse to make optional arguments to pick exactly where to save model weights and whatever else
@@ -23,10 +28,10 @@ def parse_args():
         "--weights_dir", required=True, help="Directory containing model weights"
     )
     parser.add_argument(
-        "--img_dir", required=True, help="Directory containing image data"
+        "--data_dir", required=True, help="Directory containing image data"
     )
     parser.add_argument(
-        "--metadata_path", required=True, help="Path containing metadata"
+        "--metadata_path", required=True, help="DIRECTORY containing metadata files"
     )
     parser.add_argument("--model_name", required=True, help="Model name in yaml config")
     parser.add_argument(
@@ -35,11 +40,20 @@ def parse_args():
         required=True,
         help="Number of training epochs, validation happens every epoch",
     )
+    parser.add_argument(
+        "--dataset", required=True, help='"retinal", "pathology", "chestxray"'
+    )
     return parser.parse_args()
 
 
 args = parse_args()
 config = load_config("cnn_configs.yaml")
+
+DATASET_CLASSES = {
+    "retinal": RetinalImageDataset,
+    "pathology": PathologyImageDataset,
+    "chestxray": ChestXRayDataset,
+}
 
 
 # using adam as optimizing alg
@@ -51,18 +65,24 @@ class train_cnn:
         self.name = args.model_name
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.lr = config[self.name]["lr"]
-        self.criterion = nn.CrossEntropyLoss()
+        self.criterion = nn.CrossEntropyLoss()  # If dataset is multiple diseases per image, use nn.BCEWithLogitsLoss instead of nn.CrossEntropyLoss
         self.train_loader = cnn_dataloaders.make_cnn_dataloader(
-            "train",
-            args.img_dir,
-            args.metadata_path,
-            config[self.name]["batch_size"],
+            data_args={
+                "dataset_type": "train",
+                "data_dir": args.data_dir,
+                "metadata_path": args.metadata_path,
+            },
+            dataset_class=DATASET_CLASSES[args.dataset],
+            batch_size=config[self.name]["data"]["batch_size"],
         )
         self.eval_loader = cnn_dataloaders.make_cnn_dataloader(
-            "eval",
-            args.img_dir,
-            args.metadata_path,
-            config[self.name]["batch_size"],
+            data_args={
+                "dataset_type": "eval",
+                "data_dir": args.data_dir,
+                "metadata_path": args.metadata_path,
+            },
+            dataset_class=DATASET_CLASSES[args.dataset],
+            batch_size=config[self.name]["data"]["batch_size"],
         )
 
         num_classes = self.train_loader.dataset.get_num_classes()  # type: ignore as all the datasets have get_num_classes
@@ -91,7 +111,9 @@ class train_cnn:
 
     def save_model(self):
         os.makedirs(args.weights_dir, exist_ok=True)
-        path = os.path.join(args.weights_dir, f"{self.name}_fine_tuned.pt")
+        path = os.path.join(
+            args.weights_dir, f"{self.name}_{args.dataset}_fine_tuned.pt"
+        )
         torch.save(self.model.state_dict(), path)
         print(f"Model saved to {path}")
 
@@ -104,10 +126,11 @@ class train_cnn:
             correct = 0
             total = 0
 
-            for inputs, labels in tqdm(
+            for batch in tqdm(
                 self.train_loader, desc=f"Epoch {epoch + 1}/{num_epochs}"
             ):
-                inputs, labels = inputs.to(self.device), labels.to(self.device)
+                inputs = batch["image"].to(self.device)
+                labels = batch["label"].to(self.device)
 
                 outputs = self.model(inputs)  # forward pass
                 loss = self.criterion(outputs, labels)
@@ -135,8 +158,10 @@ class train_cnn:
         total = 0
 
         with torch.no_grad():
-            for inputs, labels in self.eval_loader:
-                inputs, labels = inputs.to(self.device), labels.to(self.device)
+            for batch in self.eval_loader:
+                inputs = batch["image"].to(self.device)
+                labels = batch["label"].to(self.device)
+
                 outputs = self.model(inputs)
                 _, preds = torch.max(outputs, 1)
                 correct += (preds == labels).sum().item()
