@@ -1,0 +1,116 @@
+# Medical Imaging Benchmarking Configuration
+
+datasets:
+  chexpert:
+    name: "CheXpert"
+    path: "data/chexpert"
+    type: "image"
+    task: "chest_xray_classification"
+    classes: ["Atelectasis", "Cardiomegaly", "Consolidation", "Edema", "Pleural Effusion"]
+    
+  mimic_cxr:
+    name: "MIMIC-CXR"
+    path: "data/mimic-cxr"
+    type: "image"
+    task: "chest_xray_classification"
+    
+  padchest:
+    name: "PadChest"
+    path: "data/padchest"
+    type: "image"
+    task: "chest_xray_classification"
+    
+  # Retinal imaging datasets
+  retinal_disease_kaggle:
+    name: "Retinal Disease Kaggle"
+    path: "data/retinal_disease_kaggle"
+    type: "image"
+    task: "retinal_disease_classification"
+    classes: ["Normal", "Diabetic Retinopathy", "AMD", "Glaucoma"]
+    
+  odir2019:
+    name: "ODIR-2019"
+    path: "data/odir2019"
+    type: "image"
+    task: "odir_multi_label"
+    classes: ["Normal", "Diabetic Retinopathy", "Glaucoma", "Cataract", "AMD", "Hypertension", "Myopia", "Others"]
+    
+  # Demographic groups for fairness evaluation
+demographic_attributes:
+  gender: ["Male", "Female"]
+  age: ["0-20", "20-40", "40-60", "60+"]
+  race: ["White", "Black", "Asian", "Other"]
+  insurance: ["Medicare", "Medicaid", "Private", "Self-pay"]
+
+# Model configurations
+models:
+  vision_models:
+    - "chexzero"  # BiomedCLIP
+    - "chexpert"  # CheXpert model
+    - "llava"     # LLaVA for medical imaging
+  
+  text_models:
+    - "biomedlm"  # Stanford's BioMedLM
+    - "claude"    # Claude 3 Opus
+    - "chatgpt"   # GPT-4 Vision
+
+# Evaluation settings
+evaluation:
+  batch_size: 8  # Batch size for inference
+  num_workers: 4  # Number of workers for data loading
+  
+  # Image processing
+  image_size: 224  # Input image size
+  normalize_mean: [0.485, 0.456, 0.406]  # ImageNet mean
+  normalize_std: [0.229, 0.224, 0.225]   # ImageNet std
+  
+  # Metrics to compute
+  metrics:
+    classification:
+      - "accuracy"
+      - "auroc"
+      - "f1_score"
+      - "precision"
+      - "recall"
+    
+    fairness:
+      - "equity_scaled_auc"
+      - "demographic_parity_difference"
+      - "equal_opportunity_difference"
+      - "disparate_impact_ratio"
+      - "statistical_parity_difference"
+
+# Output settings
+output:
+  results_dir: "results/medical_imaging_benchmarks"
+  save_predictions: true
+  save_attention_maps: true  # For vision models that support attention visualization
+  generate_reports: true
+  
+  # Visualization settings
+  visualization:
+    num_examples: 10  # Number of examples to visualize
+    save_figures: true
+    dpi: 300
+
+# Hardware settings
+hardware:
+  device: "cuda" if torch.cuda.is_available() else "cpu"
+  mixed_precision: true
+  gradient_checkpointing: true  # For large models
+
+# API settings (for cloud-based models)
+api_keys:
+  openai: ${OPENAI_API_KEY}  # Read from environment
+  anthropic: ${ANTHROPIC_API_KEY}  # Read from environment
+
+# Dataset specific settings
+chexpert:
+  views: ["frontal", "lateral"]
+  use_uncertain_labels: false  # Whether to include uncertain labels
+  
+mimic_cxr:
+  split_ratio: [0.7, 0.15, 0.15]  # Train/Val/Test split
+  
+padchest:
+  min_frequency: 100  # Minimum samples per class
