@@ -4,6 +4,8 @@ datasets:
   chexpert:
     name: "CheXpert"
     path: "data/chexpert"
+    csv: "data/chexpert/val_metadata.csv"
+    image_root: "/shared/ssd_182T/dataset/chexpertchestxrays-u20210408"
     type: "image"
     task: "chest_xray_classification"
     classes: ["Atelectasis", "Cardiomegaly", "Consolidation", "Edema", "Pleural Effusion"]
@@ -45,9 +47,9 @@ demographic_attributes:
 # Model configurations
 models:
   vision_models:
-    - "chexzero"  # BiomedCLIP
-    - "chexpert"  # CheXpert model
-    - "llava"     # LLaVA for medical imaging
+    - "chexzero_vitl16"  # BiomedCLIP
+    - "chexpert_densenet121"  # CheXpert model
+    - "llava_v1_5_13b"     # LLaVA for medical imaging
   
   text_models:
     - "biomedlm"  # Stanford's BioMedLM
@@ -95,7 +97,7 @@ output:
 
 # Hardware settings
 hardware:
-  device: "cuda" if torch.cuda.is_available() else "cpu"
+  device: "cuda"
   mixed_precision: true
   gradient_checkpointing: true  # For large models
 

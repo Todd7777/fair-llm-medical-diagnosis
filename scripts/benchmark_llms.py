@@ -11,22 +11,24 @@ import argparse
 import yaml
 import json
 import torch
+from torch.utils.data import Dataset, DataLoader
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple, Union
 from pathlib import Path
+from PIL import Image
 
 # Add project root to path
 import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from fairtune.metrics.fairness import (
+'''from fairtune.metrics.fairness import (
     compute_fairness_metrics,
     compute_equity_scaled_auc,
     compute_subgroup_metrics,
-)
+)'''
 
 # Dictionary of strong open-source models and their configurations
 # Only fully open-weight models are included to ensure local, reproducible research.
@@ -60,7 +62,7 @@ SUPPORTED_MODELS = {
         "description": "BiomedCLIP (CLIP variant) – strong zero-shot vision-language model for biomedical imaging",
     },
     "llava_v1_5_13b": {
-        "type": "vision_language",
+        "type": "vision",
         "model_name": "llava-hf/llava-1.5-13b-hf",
         "processor_name": "llava-hf/llava-1.5-13b-hf",
         "is_local": True,
@@ -177,55 +179,40 @@ class MedicalImagingBenchmarker:
         return datasets
     
     def _load_chexpert(self, dataset_cfg: Dict) -> Dict:
-        """Load CheXpert dataset."""
-        from torchvision import transforms
-        from torch.utils.data import Dataset, DataLoader
-        
-        class CheXpertDataset(Dataset):
-            def __init__(self, root_dir, split='train', transform=None):
-                self.root_dir = Path(root_dir)
-                self.split = split
-                self.transform = transform
-                self.samples = self._load_samples()
-            
-            def _load_samples(self):
-                # TODO: Implement actual CheXpert data loading
-                # This is a placeholder implementation
-                return []
-            
-            def __len__(self):
-                return len(self.samples)
-            
-            def __getitem__(self, idx):
-                # TODO: Implement actual data loading and transformation
-                # Return format: {"image": tensor, "label": tensor, "demographics": dict}
-                pass
-        
-        # Define transforms
-        transform = transforms.Compose([
-            transforms.Resize((self.config["evaluation"]["image_size"], 
-                             self.config["evaluation"]["image_size"])),
-            transforms.ToTensor(),
-            transforms.Normalize(mean=self.config["evaluation"]["normalize_mean"],
-                              std=self.config["evaluation"]["normalize_std"])
-        ])
-        
-        # Create datasets
-        dataset = {}
-        for split in ['train', 'val', 'test']:
-            dataset[split] = CheXpertDataset(
+            from torchvision import transforms
+            from torch.utils.data import Dataset, DataLoader
+            from pathlib import Path
+
+            transform = transforms.Compose([
+                transforms.Resize((self.config["evaluation"]["image_size"], 
+                                self.config["evaluation"]["image_size"])),
+                transforms.ToTensor(),
+                transforms.Normalize(mean=self.config["evaluation"]["normalize_mean"],
+                                    std=self.config["evaluation"]["normalize_std"])
+            ])
+
+            image_root = dataset_cfg["image_root"]
+            csv = dataset_cfg["csv"]
+
+            dataset_val = CheXpertDataset(
                 root_dir=dataset_cfg["path"],
-                split=split,
+                csv=Path(csv).name,  # just the filename, assuming it's inside `path`
+                image_root=image_root,
                 transform=transform
             )
-        
-        return dataset
+
+            return {
+                "train": [],
+                "val": dataset_val,
+                "test": dataset_val  # reuse val as test for benchmarking
+            }
+
     
     def _load_mimic_cxr(self, dataset_cfg: Dict) -> Dict:
         """Load MIMIC-CXR dataset."""
         # Similar structure to _load_chexpert
         # Implementation depends on how you want to process MIMIC-CXR
-        pass
+        return {"train": [], "val": [], "test": []}
     
     def _load_padchest(self, dataset_cfg: Dict) -> Dict:
         """Load PadChest dataset."""
@@ -247,16 +234,16 @@ class MedicalImagingBenchmarker:
         dataloaders = {}
         
         for dataset_name, dataset in self.datasets.items():
-            dataloaders[dataset_name] = {
-                split: DataLoader(
-                    dataset[split],
-                    batch_size=self.config["evaluation"]["batch_size"],
-                    num_workers=self.config["evaluation"]["num_workers"],
-                    shuffle=(split == 'train'),
-                    pin_memory=torch.cuda.is_available()
-                )
-                for split in ['train', 'val', 'test']
-            }
+            dataloaders[dataset_name] = {}
+            for split in ['train', 'val', 'test']:
+                if dataset[split]:  # only create DataLoader if split is non-empty
+                    dataloaders[dataset_name][split] = DataLoader(
+                        dataset[split],
+                        batch_size=self.config["evaluation"]["batch_size"],
+                        num_workers=self.config["evaluation"]["num_workers"],
+                        shuffle=(split == 'train'),
+                        pin_memory=torch.cuda.is_available()
+                    )
         
         return dataloaders
     
@@ -264,23 +251,20 @@ class MedicalImagingBenchmarker:
         """Load the specified model based on its type."""
         model_config = SUPPORTED_MODELS.get(model_name.lower())
         if not model_config:
-            raise ValueError(f"Unsupported model: {model_name}")
+            print(f"Model {model_name} not in SUPPORTED_MODELS.")
+            return None
         
         # Get API key from environment if needed
         if "api_key_env" in model_config:
             model_config["api_key"] = os.getenv(model_config["api_key_env"])
         
-        model_type = model_config["type"]
-        
         try:
-            if model_type == "vision":
+            if model_config["type"] in ["vision", "vision_language"]:
                 return self._load_vision_model(model_name, model_config)
-            elif model_type == "text":
+            elif model_config["type"] == "text":
                 return self._load_text_model(model_name, model_config)
-            elif model_type == "api":
+            elif model_config["type"] == "api":
                 return self._load_api_model(model_name, model_config)
-            else:
-                raise ValueError(f"Unsupported model type: {model_type}")
         except Exception as e:
             print(f"Error loading model {model_name}: {str(e)}")
             raise
@@ -319,7 +303,7 @@ class MedicalImagingBenchmarker:
             
             return {"model": model, "processor": feature_extractor, "type": "vision"}
             
-        elif model_name == "llava":
+        elif model_name.startswith("llava"):
             # LLaVA model for medical imaging
             from transformers import AutoProcessor, LlavaForConditionalGeneration
             
@@ -462,10 +446,14 @@ class MedicalImagingBenchmarker:
         print(f"\nEvaluating {model_name} on {dataset_name} {split} split...")
         
         # Initialize model
-        try:
-            model_info = self._load_model(model_name)
-        except Exception as e:
-            print(f"Failed to load model {model_name}: {str(e)}")
+        model_info = self._load_model(model_name)
+        if model_info is None:
+            print(f"Failed to load model {model_name}")
+            return None
+        
+        # skip empty datasets
+        if split not in self.dataloaders[dataset_name]:
+            print(f"Skipping {model_name} on {dataset_name} {split} (no data)")
             return None
         
         # Get dataloader
@@ -738,12 +726,12 @@ class MedicalImagingBenchmarker:
     def run_benchmark(self, models: List[str] = None):
         """Run the benchmark for the specified models."""
         if models is None:
-            models = list(SUPPORTED_LLMS.keys())
+            models = list(SUPPORTED_MODELS.keys())
         
         all_metrics = {}
         
         for model_type in models:
-            if model_type.lower() not in SUPPORTED_LLMS:
+            if model_type.lower() not in SUPPORTED_MODELS:
                 print(f"Skipping unsupported model: {model_type}")
                 continue
                 
@@ -761,6 +749,47 @@ class MedicalImagingBenchmarker:
                 }, f, indent=2)
             print(f"\nBenchmark summary saved to {summary_file}")
 
+class CheXpertDataset(Dataset):
+    def __init__(self, root_dir, csv="val_metadata.csv", image_root=None, transform=None):
+        self.root_dir = Path(root_dir)
+        self.csv_path = self.root_dir / csv
+        self.image_root = Path(image_root)
+        self.transform = transform
+        self.samples = self._load_samples()
+
+    def _load_samples(self):
+        df = pd.read_csv(self.csv_path)
+        samples = []
+        for _, row in df.iterrows():
+            img_path = self.image_root / row["Path"]
+            labels = [row[c] for c in ["Atelectasis", "Cardiomegaly", "Consolidation", "Edema", "Pleural Effusion"]]
+            labels = [0 if pd.isna(x) or x < 0 else int(x) for x in labels]
+            sample = {
+                "image_path": str(img_path),
+                "label": torch.tensor(labels).float(),
+                "demographics": {
+                    "gender": row.get("Sex", "Unknown"),
+                    "age": str(row.get("Age", "Unknown")),
+                    "race": row.get("Race", "Unknown"),
+                }
+            }
+            samples.append(sample)
+        return samples
+
+    def __len__(self):
+        return len(self.samples)
+
+    def __getitem__(self, idx):
+        sample = self.samples[idx]
+        image = Image.open(sample["image_path"]).convert("RGB")
+        if self.transform:
+            image = self.transform(image)
+        return {
+            "image": image,
+            "label": sample["label"],
+            "image_path": sample["image_path"],
+            "demographics": sample["demographics"]
+        }
 
 def parse_args():
     """Parse command line arguments."""
@@ -777,6 +806,20 @@ def parse_args():
         nargs="+",
         default=None,
         help="List of models to benchmark (default: all supported models)"
+    )
+    parser.add_argument(
+    "--vision-models",
+    type=str,
+    nargs="+",
+    default=None,
+    help="List of vision models to evaluate"
+    )
+    parser.add_argument(
+    "--text-models",
+    type=str,
+    nargs="+",
+    default=None,
+    help="List of text models to evaluate"
     )
     return parser.parse_args()
 
