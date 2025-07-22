@@ -31,7 +31,7 @@ def parse_args():
         "--data_dir", required=True, help="Directory containing image data"
     )
     parser.add_argument(
-        "--metadata_path", required=True, help="DIRECTORY containing metadata files"
+        "--metadata_dir", required=True, help="DIRECTORY containing metadata files"
     )
     parser.add_argument("--model_name", required=True, help="Model name in yaml config")
     parser.add_argument(
@@ -48,6 +48,7 @@ def parse_args():
 
 args = parse_args()
 config = load_config("cnn_configs.yaml")
+seed = "NOT IMPLEMENTED"
 
 DATASET_CLASSES = {
     "retinal": RetinalImageDataset,
@@ -70,7 +71,8 @@ class train_cnn:
             data_args={
                 "dataset_type": "train",
                 "data_dir": args.data_dir,
-                "metadata_path": args.metadata_path,
+                "metadata_dir": args.metadata_dir,
+                "model_name": self.name,
             },
             dataset_class=DATASET_CLASSES[args.dataset],
             batch_size=config[self.name]["data"]["batch_size"],
@@ -79,7 +81,8 @@ class train_cnn:
             data_args={
                 "dataset_type": "eval",
                 "data_dir": args.data_dir,
-                "metadata_path": args.metadata_path,
+                "metadata_dir": args.metadata_dir,
+                "model_name": self.name,
             },
             dataset_class=DATASET_CLASSES[args.dataset],
             batch_size=config[self.name]["data"]["batch_size"],
@@ -120,6 +123,9 @@ class train_cnn:
     def train(self):
         num_epochs = args.num_epochs
         self.model.train()
+
+        with open("results/train_results.txt", "w") as out_file:
+            out_file.write(f"Training using seed: {seed}")
 
         for epoch in range(num_epochs):
             epoch_loss = 0.0
@@ -169,6 +175,9 @@ class train_cnn:
 
         acc = 100 * correct / total
         print(f"Validation Accuracy: {acc:.2f}%")
+        with open("results/train_results.txt", "w") as out_file:
+            out_file.write(f"Validation Accuracy: {acc:.2f}%")
+
         self.model.train()
 
 

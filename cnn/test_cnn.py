@@ -30,7 +30,7 @@ def parse_args():
         "--data_dir", required=True, help="Directory containing image data"
     )
     parser.add_argument(
-        "--metadata_path", required=True, help="DIRECTORY containing metadata files"
+        "--metadata_dir", required=True, help="DIRECTORY containing metadata files"
     )
     parser.add_argument("--model_name", required=True, help="Model name in config")
     parser.add_argument(
@@ -48,6 +48,7 @@ DATASET_CLASSES = {
 
 args = parse_args()
 config = load_config("cnn_configs.yaml")
+seed = "NOT IMPLEMENTED"
 
 
 class test_cnn:
@@ -61,7 +62,8 @@ class test_cnn:
             data_args={
                 "dataset_type": "test",
                 "data_dir": args.data_dir,
-                "metadata_path": args.metadata_path,
+                "metadata_dir": args.metadata_dir,
+                "model_name": self.name,
             },
             dataset_class=DATASET_CLASSES[args.dataset],
             batch_size=config[self.name]["data"]["batch_size"],
@@ -110,6 +112,11 @@ class test_cnn:
 
         acc = 100 * correct / total
         print(f"{correct} / {total} correct\nAccuracy: {acc:.2f}%")
+
+        with open("results/test_results.txt", "w") as out_file:
+            out_file.write(
+                f"Inference using seed: {seed} with\n{correct} / {total} correct\nAccuracy: {acc:.2f}%"
+            )
 
 
 def run_testing():
