@@ -68,10 +68,10 @@ class ChestXRayDataset(Dataset):
 
 
 class PathologyImageDataset(Dataset):
-    def __init__(self, data_dir, metadata_path, transform):
+    def __init__(self, data_dir, metadata_dir, transform):
         super().__init__()
         self.data_dir = data_dir
-        self.metadata_path = metadata_path
+        self.metadata_dir = metadata_dir
         self.transform = transform
 
     def __len__(self):
@@ -86,7 +86,7 @@ class PathologyImageDataset(Dataset):
 
 # Subject to change based on how the retinal dataset's data is layed out
 class RetinalImageDataset(Dataset):
-    def __init__(self, dataset_type, data_dir, metadata_path, transform):
+    def __init__(self, dataset_type, data_dir, metadata_dir, transform):
         super().__init__()
         self.data_dir = data_dir
         self.transform = transform
@@ -102,7 +102,7 @@ class RetinalImageDataset(Dataset):
         else:
             raise Exception('dataset types: "train", "eval", "test"')
 
-        self.metadata = pd.read_csv(os.path.join(metadata_path, self.metadata_file))
+        self.metadata = pd.read_csv(os.path.join(metadata_dir, self.metadata_file))
 
     def __len__(self):
         return len(self.metadata)
@@ -115,13 +115,11 @@ class RetinalImageDataset(Dataset):
         if self.transform:
             image = self.transform(image)  # PIL image
         label = row["label"]
-        demographic = row["demographic"]
 
         return {
             "image": image,
             "label": label,
-            # "demographic": demographic, # won't be used
-        }  # def something diff
+        }
 
     def get_num_classes(self):
         return len(self.metadata["label"].unique())
