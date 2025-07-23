@@ -19,6 +19,8 @@ from datetime import datetime
 from typing import Dict, List, Optional, Tuple, Union
 from pathlib import Path
 from PIL import Image
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
 
 # Add project root to path
 import sys
@@ -45,10 +47,10 @@ SUPPORTED_MODELS = {
     },
     "chexzero_vitl16": {
         "type": "vision",
-        "model_name": "microsoft/BiomedCLIP-PubMedBERT_256-vit_large_patch16_224",
-        "processor_name": "microsoft/BiomedCLIP-PubMedBERT_256-vit_large_patch16_224",
+        "model_name": "microsoft/BiomedCLIP-PubMedBERT_256-vit_base_patch16_224",
+        "processor_name": "microsoft/BiomedCLIP-PubMedBERT_256-vit_base_patch16_224",
         "is_local": True,
-        "description": "ViT-Large backbone from BiomedCLIP used for zero-shot CheXpert (CheXzero)",
+        "description": "BiomedCLIP ViT-B/16 (public)",
     },
 
     # ------------------------------------------------------------------
@@ -265,6 +267,8 @@ class MedicalImagingBenchmarker:
                 return self._load_text_model(model_name, model_config)
             elif model_config["type"] == "api":
                 return self._load_api_model(model_name, model_config)
+            else:
+                raise ValueError(f"Unsupported model type: {model_config['type']}")
         except Exception as e:
             print(f"Error loading model {model_name}: {str(e)}")
             raise
@@ -272,18 +276,21 @@ class MedicalImagingBenchmarker:
     def _load_vision_model(self, model_name: str, model_config: Dict):
         """Load a vision or vision-language model."""
         from transformers import AutoModelForImageClassification, AutoFeatureExtractor
+        lname = model_name.lower()
         
-        if model_name == "chexzero":
+        if "chexzero" in lname:
             # BiomedCLIP model
             from transformers import AutoProcessor, AutoModel
-            
+            hf_token = os.getenv("HF_TOKEN", None)
             processor = AutoProcessor.from_pretrained(
                 model_config["processor_name"],
-                trust_remote_code=True
+                trust_remote_code=True,
+                token=hf_token
             )
             model = AutoModel.from_pretrained(
                 model_config["model_name"],
-                trust_remote_code=True
+                trust_remote_code=True,
+                token=hf_token
             ).to(self.device)
             
             if self.config["hardware"]["gradient_checkpointing"]:
@@ -291,7 +298,7 @@ class MedicalImagingBenchmarker:
                 
             return {"model": model, "processor": processor, "type": "vision"}
             
-        elif model_name == "chexpert":
+        elif "chexpert" in lname and "densenet" in lname:
             # Standard CheXpert model
             feature_extractor = AutoFeatureExtractor.from_pretrained(
                 model_config["processor_name"]
@@ -303,7 +310,7 @@ class MedicalImagingBenchmarker:
             
             return {"model": model, "processor": feature_extractor, "type": "vision"}
             
-        elif model_name.startswith("llava"):
+        elif "llava" in lname:
             # LLaVA model for medical imaging
             from transformers import AutoProcessor, LlavaForConditionalGeneration
             
@@ -318,6 +325,9 @@ class MedicalImagingBenchmarker:
             )
             
             return {"model": model, "processor": processor, "type": "vision_language"}
+        
+        else:
+            raise ValueError(f"Unsupported vision model name: {model_name}")
     
     def _load_api_model(self, model_name: str, model_config: Dict):
         """Initialize an API-based multimodal LLM client."""
@@ -536,10 +546,12 @@ class MedicalImagingBenchmarker:
             "Question: What abnormalities are present in this chest X-ray? Answer:"
             for _ in range(len(images))
         ]
+
+        pil_images = [Image.open(p).convert("RGB") for p in batch["image_path"]]
         
         # Process inputs
         inputs = processor(
-            text=prompts,
+            text=pil_images,
             images=images,
             return_tensors="pt",
             padding=True,
@@ -707,12 +719,6 @@ class MedicalImagingBenchmarker:
         
         return metrics
     
-    def _compute_metrics(self, samples: List[Dict]) -> Dict:
-        """Compute evaluation metrics."""
-        # TODO: Implement metric computation
-        # This should include accuracy, fairness metrics, etc.
-        return {}
-    
     def _save_results(self, results: Dict, model_type: str):
         """Save evaluation results to disk."""
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -761,7 +767,10 @@ class CheXpertDataset(Dataset):
         df = pd.read_csv(self.csv_path)
         samples = []
         for _, row in df.iterrows():
-            img_path = self.image_root / row["Path"]
+            img_path = (self.image_root / str(row["Path"]).lstrip("/")).as_posix()
+            # if not os.path.exists(img_path):
+            #     # skip bad rows
+            #     continue
             labels = [row[c] for c in ["Atelectasis", "Cardiomegaly", "Consolidation", "Edema", "Pleural Effusion"]]
             labels = [0 if pd.isna(x) or x < 0 else int(x) for x in labels]
             sample = {
