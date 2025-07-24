@@ -125,8 +125,8 @@ class train_cnn:
         self.model.train()
 
         os.makedirs("results", exist_ok=True)
-        with open("results/train_results.txt", "w") as out_file:
-            out_file.write(f"Training using seed: {seed}")
+        out_file = open("results/train_results.txt", "w")
+        out_file.write(f"Training using seed: {seed}\n")
 
         for epoch in range(num_epochs):
             epoch_loss = 0.0
@@ -156,10 +156,15 @@ class train_cnn:
             print(
                 f"Epoch {epoch + 1}: Loss: {epoch_loss / len(self.train_loader):.4f} | Accuracy: {acc:.2f}%"
             )
+            out_file.write(
+                f"Epoch {epoch + 1}: Loss: {epoch_loss / len(self.train_loader):.4f} | Accuracy: {acc:.2f}%\n"
+            )
 
-            self.validate()
+            self.validate(out_file)
 
-    def validate(self):
+        out_file.close()
+
+    def validate(self, out_file):
         self.model.eval()
         correct = 0
         total = 0
@@ -176,8 +181,7 @@ class train_cnn:
 
         acc = 100 * correct / total
         print(f"Validation Accuracy: {acc:.2f}%")
-        with open("results/train_results.txt", "w") as out_file:
-            out_file.write(f"Validation Accuracy: {acc:.2f}%")
+        out_file.write(f"Validation Accuracy: {acc:.2f}%\n\n")
 
         self.model.train()
 
