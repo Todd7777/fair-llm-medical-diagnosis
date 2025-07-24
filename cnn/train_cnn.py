@@ -124,7 +124,7 @@ class train_cnn:
         num_epochs = args.num_epochs
         self.model.train()
 
-        os.makedirs("results/train_results.txt", exist_ok=True)
+        os.makedirs("results", exist_ok=True)
         with open("results/train_results.txt", "w") as out_file:
             out_file.write(f"Training using seed: {seed}")
 

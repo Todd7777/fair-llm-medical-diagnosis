@@ -86,7 +86,7 @@ class test_cnn:
             model.classifier[1] = nn.Linear(in_features, num_classes)  # type: ignore as it is a sequential, able to be indexed
             model.load_state_dict(
                 torch.load(
-                    os.path.join(args.weights_dir, f"{self.name}_fine_tuned.pt"),
+                    os.path.join(args.weights_dir, f"{self.name}_{args.dataset}_fine_tuned.pt"),
                     map_location=self.device,
                 )
             )
@@ -113,7 +113,7 @@ class test_cnn:
         acc = 100 * correct / total
         print(f"{correct} / {total} correct\nAccuracy: {acc:.2f}%")
 
-        os.makedirs("results/test_results.txt", exist_ok=True)
+        os.makedirs("results", exist_ok=True)
         with open("results/test_results.txt", "w") as out_file:
             out_file.write(
                 f"Inference using seed: {seed} with\n{correct} / {total} correct\nAccuracy: {acc:.2f}%"
