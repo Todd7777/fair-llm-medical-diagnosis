@@ -5,7 +5,7 @@ datasets:
     name: "CheXpert"
     path: "data/chexpert"
     csv: "data/chexpert/val_metadata.csv"
-    image_root: "/shared/ssd_182T/dataset/chexpertchestxrays-u20210408"
+    image_root: "/shared/ssd_14T/home/lilyshi/mnt/chexpert_data" # mounted dataset locally"
     type: "image"
     task: "chest_xray_classification"
     classes: ["Atelectasis", "Cardiomegaly", "Consolidation", "Edema", "Pleural Effusion"]
