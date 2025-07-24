@@ -113,7 +113,7 @@ class test_cnn:
         acc = 100 * correct / total
         print(f"{correct} / {total} correct\nAccuracy: {acc:.2f}%")
 
-        os.makedirs("results/test_results.txt", exist_ok=True)
+        os.makedirs("results", exist_ok=True)
         with open("results/test_results.txt", "w") as out_file:
             out_file.write(
                 f"Inference using seed: {seed} with\n{correct} / {total} correct\nAccuracy: {acc:.2f}%"
