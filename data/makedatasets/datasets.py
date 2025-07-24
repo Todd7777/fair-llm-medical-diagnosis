@@ -108,6 +108,7 @@ class RetinalImageDataset(Dataset):
         else:
             print("csv does not exist, creating")
             convert_to_csv(metadata_dir, self.metadata_file, ".txt")
+            self.metadata = pd.read_csv(os.path.join(metadata_dir, self.metadata_file))
 
     def __len__(self):
         return len(self.metadata)
