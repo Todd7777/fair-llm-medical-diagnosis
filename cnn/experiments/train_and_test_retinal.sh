@@ -34,7 +34,7 @@ python train_cnn.py \
   --metadata_dir "$metadata_dir" \
   --model_name "efficientnet" \
   --num_epochs 6 \
-  --dataset "retinala"
+  --dataset "retinal"
 
 printf "\nRunning testing...\n"
 python test_cnn.py \
