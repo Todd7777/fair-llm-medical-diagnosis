@@ -68,7 +68,7 @@ class ChestXRayDataset(Dataset):
 
 
 class PathologyImageDataset(Dataset):
-    def __init__(self, data_dir, metadata_dir, transform):
+    def __init__(self, data_dir, metadata_dir, transform, **kwargs):
         super().__init__()
         self.data_dir = data_dir
         self.metadata_dir = metadata_dir
@@ -86,7 +86,7 @@ class PathologyImageDataset(Dataset):
 
 # Subject to change based on how the retinal dataset's data is layed out
 class RetinalImageDataset(Dataset):
-    def __init__(self, dataset_type, data_dir, metadata_dir, transform):
+    def __init__(self, dataset_type, data_dir, metadata_dir, transform, **kwargs):
         super().__init__()
         self.data_dir = data_dir
         self.transform = transform
