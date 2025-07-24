@@ -24,7 +24,7 @@ def load_config(path):
 def parse_args():
     parser = argparse.ArgumentParser(description="Test CNN with configurable paths")
     parser.add_argument(
-        "--weights_dir", required=True, help="Directory containing model weights"
+        "--weights_dir", required=False, help="Directory containing model weights"
     )
     parser.add_argument(
         "--data_dir", required=True, help="Directory containing image data"
@@ -124,4 +124,6 @@ def run_testing():
     new_train.test()
 
 
+"""
 run_testing()
+"""
