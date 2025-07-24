@@ -91,18 +91,23 @@ class RetinalImageDataset(Dataset):
         self.data_dir = data_dir
         self.transform = transform
         if dataset_type == "train":
-            self.img_data_last_dir = "whatevertrainlastdir"
-            self.metadata_file = "whatevertrainmetadatafile"
+            self.img_data_last_dir = "train"
+            self.metadata_file = "train.csv"
         elif dataset_type == "eval":
-            self.img_data_last_dir = "whateverevallastdir"
-            self.metadata_file = "whateverevalmetadatafile"
+            self.img_data_last_dir = "valid"
+            self.metadata_file = "valid.csv"
         elif dataset_type == "test":
-            self.img_data_last_dir = "whatevertestlastdir"
-            self.metadata_file = "whatevertestmetadatafile"
+            self.img_data_last_dir = "test"
+            self.metadata_file = "test.csv"
         else:
             raise Exception('dataset types: "train", "eval", "test"')
 
-        self.metadata = pd.read_csv(os.path.join(metadata_dir, self.metadata_file))
+        if os.path.exists(os.path.join(metadata_dir, self.metadata_file)):
+            self.metadata = pd.read_csv(os.path.join(metadata_dir, self.metadata_file))
+            print("csv exists")
+        else:
+            print("csv does not exist, creating")
+            convert_to_csv(metadata_dir, self.metadata_file, ".txt")
 
     def __len__(self):
         return len(self.metadata)
@@ -110,11 +115,13 @@ class RetinalImageDataset(Dataset):
     # works when the keys are all at the top row, all the info following the same format in rows below; dataframe format
     def __getitem__(self, idx):
         row = self.metadata.iloc[idx]
-        img_path = os.path.join(self.data_dir, self.img_data_last_dir, row["Path"])
-        image = Image.open(img_path)
+        img_file_path = os.path.join(
+            self.data_dir, self.img_data_last_dir, row["Img_File_Name"]
+        )
+        image = Image.open(img_file_path)
         if self.transform:
             image = self.transform(image)  # PIL image
-        label = row["label"]
+        label = row["Label"]
 
         return {
             "image": image,
@@ -122,7 +129,20 @@ class RetinalImageDataset(Dataset):
         }
 
     def get_num_classes(self):
-        return len(self.metadata["label"].unique())
+        return len(self.metadata["Label"].unique())
+
+
+def convert_to_csv(metadata_dir, metadata_csv_file, file_type):
+    txt_file = pd.read_csv(
+        filepath_or_buffer=os.path.join(
+            metadata_dir, metadata_csv_file.replace(".csv", file_type)
+        ),
+        sep=" ",
+        engine="python",
+        header=None,
+        names=["Img_File_Name", "Label"],
+    )
+    txt_file.to_csv(os.path.join(metadata_dir, metadata_csv_file), index=False)
 
 
 def create_data_loader(dataset, batch_size, num_workers, shuffle):
