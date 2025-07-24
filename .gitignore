@@ -21,6 +21,9 @@ wheels/
 *.egg
 .python-version
 
+# Training and testing result
+cnn/results/
+
 # Virtual Environment
 .venv
 venv/

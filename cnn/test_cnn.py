@@ -86,7 +86,7 @@ class test_cnn:
             model.classifier[1] = nn.Linear(in_features, num_classes)  # type: ignore as it is a sequential, able to be indexed
             model.load_state_dict(
                 torch.load(
-                    os.path.join(args.weights_dir, f"{self.name}_fine_tuned.pt"),
+                    os.path.join(args.weights_dir, f"{self.name}_{args.dataset}_fine_tuned.pt"),
                     map_location=self.device,
                 )
             )
