@@ -12,10 +12,6 @@ python test_cnn.py --help
 
 echo "Enter weights directory:"
 read -r weights_dir
-if [ ! -d "$weights_dir" ]; then
-  echo "Error: Weights directory '$weights_dir' does not exist."
-  exit 1
-fi
 
 echo "Enter data directory:"
 read -r data_dir
@@ -36,6 +32,7 @@ python train_cnn.py \
   --weights_dir "$weights_dir" \
   --data_dir "$data_dir" \
   --metadata_dir "$metadata_dir" \
+  --model_name "efficientnet" \
   --num_epochs 6 \
   --dataset "retinala"
 
@@ -44,4 +41,5 @@ python test_cnn.py \
   --weights_dir "$weights_dir" \
   --data_dir "$data_dir" \
   --metadata_dir "$metadata_dir" \
+  --model_name "efficientnet" \
   --dataset "retinal"

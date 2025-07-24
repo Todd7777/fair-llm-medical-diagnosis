@@ -57,7 +57,7 @@ class test_cnn:
     ):
         self.name = args.model_name
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.lr = config[self.name]["lr"]
+        self.lr = config[self.name]["training"]["lr"]
         self.test_loader = cnn_dataloaders.make_cnn_dataloader(
             data_args={
                 "dataset_type": "test",
@@ -124,6 +124,4 @@ def run_testing():
     new_train.test()
 
 
-"""
 run_testing()
-"""
