@@ -57,6 +57,8 @@ fair-llm-medical-diagnosis/
 
 ## Installation
 
+# If on Windows, make sure you have a Unix-like shell environment such as WSL
+
 ```bash
 # Clone the repository
 git clone https://github.com/Todd7777/fair-llm-medical-diagnosis/
