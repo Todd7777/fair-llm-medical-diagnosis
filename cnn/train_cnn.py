@@ -35,12 +35,6 @@ def parse_args():
     )
     parser.add_argument("--model_name", required=True, help="Model name in yaml config")
     parser.add_argument(
-        "--num_epochs",
-        type=int,
-        required=True,
-        help="Number of training epochs, validation happens every epoch",
-    )
-    parser.add_argument(
         "--dataset", required=True, help='"retinal", "pathology", "chestxray"'
     )
     return parser.parse_args()
@@ -139,7 +133,7 @@ class train_cnn:
         print(f"Model saved to {path}")
 
     def train(self):
-        num_epochs = args.num_epochs
+        num_epochs = config[self.name]["training"]["epochs"]
         self.model.train()
 
         os.makedirs("results", exist_ok=True)

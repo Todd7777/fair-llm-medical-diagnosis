@@ -1,9 +1,6 @@
 #!/usr/bin/env bash
 
-# TODO: Add selection of CNN model with parseargs and implment it here
-# currently only uses efficientnet
-
-# From cnn directory, run ./experiments/train_and_test_chestxray.sh
+# From cnn directory, run ./experiments/train_and_test_retinal.sh
 
 printf "Below is the usage and description for each parameter of train_cnn:\n"
 python train_cnn.py --help
@@ -27,13 +24,26 @@ if [ ! -d "$metadata_dir" ]; then
   exit 1
 fi
 
+
+echo "Enter CNN model name:"
+read -r model_name
+
+# Define valid model names
+valid_models="efficientnet_v2 densenet convnext"
+
+# Check if input is in valid_models list
+if ! [[ " $valid_models " =~ " $model_name " ]]; then
+  echo "Error: model name does not exist. Names: efficientnet_v2, densenet, convnext"
+  exit 1
+fi
+
+
 printf "\nRunning training...\n"
 python train_cnn.py \
   --weights_dir "$weights_dir" \
   --data_dir "$data_dir" \
   --metadata_dir "$metadata_dir" \
-  --model_name "efficientnet_v2" \
-  --num_epochs 6 \
+  --model_name "$model_name" \
   --dataset "retinal"
 
 printf "\nRunning testing...\n"
@@ -41,5 +51,5 @@ python test_cnn.py \
   --weights_dir "$weights_dir" \
   --data_dir "$data_dir" \
   --metadata_dir "$metadata_dir" \
-  --model_name "efficientnet_v2" \
+  --model_name "$model_name" \
   --dataset "retinal"

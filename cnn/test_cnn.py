@@ -73,6 +73,10 @@ class test_cnn:
 
         if self.name == "efficientnet_v2":
             self.model = self._build_efficientnet_v2(num_classes)
+        elif self.name == "densenet":
+            self.model = self._build_densenet(num_classes)
+        elif self.name == "convnext":
+            self.model = self._build_convnext(num_classes)
 
     def _build_efficientnet_v2(self, num_classes):
         zero_shot = False
@@ -84,6 +88,50 @@ class test_cnn:
             model = models.efficientnet_v2_m()
             in_features = model.classifier[1].in_features
             model.classifier[1] = nn.Linear(in_features, num_classes)  # type: ignore as it is a sequential, able to be indexed
+            model.load_state_dict(
+                torch.load(
+                    os.path.join(
+                        args.weights_dir, f"{self.name}_{args.dataset}_fine_tuned.pt"
+                    ),
+                    map_location=self.device,
+                )
+            )
+
+        model.eval()
+        return model.to(self.device)
+
+    def _build_densenet(self, num_classes):
+        zero_shot = False
+        if zero_shot:
+            model = models.densenet121(weights="DEFAULT")
+            in_features = model.classifier.in_features
+            model.classifier = nn.Linear(in_features, num_classes)  # type: ignore as it is a sequential, able to be indexed
+        else:
+            model = models.densenet121()
+            in_features = model.classifier.in_features
+            model.classifier = nn.Linear(in_features, num_classes)  # type: ignore as it is a sequential, able to be indexed
+            model.load_state_dict(
+                torch.load(
+                    os.path.join(
+                        args.weights_dir, f"{self.name}_{args.dataset}_fine_tuned.pt"
+                    ),
+                    map_location=self.device,
+                )
+            )
+
+        model.eval()
+        return model.to(self.device)
+
+    def _build_convnext(self, num_classes):
+        zero_shot = False
+        if zero_shot:
+            model = models.convnext_tiny(weights="DEFAULT")
+            in_features = model.classifier[2].in_features
+            model.classifier[2] = nn.Linear(in_features, num_classes)  # type: ignore as it is a sequential, able to be indexed
+        else:
+            model = models.convnext_tiny()
+            in_features = model.classifier[2].in_features
+            model.classifier[2] = nn.Linear(in_features, num_classes)  # type: ignore as it is a sequential, able to be indexed
             model.load_state_dict(
                 torch.load(
                     os.path.join(
