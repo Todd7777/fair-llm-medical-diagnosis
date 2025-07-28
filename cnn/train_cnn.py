@@ -93,6 +93,8 @@ class train_cnn:
             self.model = self._build_efficientnet_v2(num_classes)
         elif self.name == "densenet":
             self.model = self._build_densenet(num_classes)
+        elif self.name == "convnext":
+            self.model = self._build_convnext(num_classes)
 
     # all pretrained on imagenet
     def _build_efficientnet_v2(self, num_classes):
