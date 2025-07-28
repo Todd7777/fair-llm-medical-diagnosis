@@ -57,6 +57,7 @@ class test_cnn:
     ):
         self.name = args.model_name
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        print("Using device:", self.device)
         self.lr = config[self.name]["training"]["lr"]
         self.test_loader = cnn_dataloaders.make_cnn_dataloader(
             data_args={
@@ -160,6 +161,12 @@ class test_cnn:
                 correct += (preds == labels).sum().item()
                 total += labels.size(0)
 
+        print("\nCuda memory allocated (GB):", torch.cuda.memory_allocated() / 1024**3)
+        print(
+            "Cuda max memory reserved (GB):",
+            torch.cuda.max_memory_reserved() / 1024**3,
+            "\n",
+        )
         acc = 100 * correct / total
         print(f"{correct} / {total} correct\nAccuracy: {acc:.2f}%")
 
