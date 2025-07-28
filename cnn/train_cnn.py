@@ -89,25 +89,41 @@ class train_cnn:
         )
 
         num_classes = self.train_loader.dataset.get_num_classes()  # type: ignore as all the datasets have get_num_classes
-        if self.name == "efficientnet":
-            self.model = self._build_efficientnet(num_classes)
-        elif self.name == "someothernet":
-            self.model = self._build_someothernet(num_classes)
+        if self.name == "efficientnet_v2":
+            self.model = self._build_efficientnet_v2(num_classes)
+        elif self.name == "densenet":
+            self.model = self._build_densenet(num_classes)
 
-    def _build_efficientnet(self, num_classes):
-        model = models.efficientnet_b0(weights="DEFAULT")
-        # this efficientnet has 1280 features
+    # all pretrained on imagenet
+    def _build_efficientnet_v2(self, num_classes):
+        model = models.efficientnet_v2_m(  # s, m, l
+            weights="DEFAULT"
+        )
         in_features = model.classifier[1].in_features
         model.classifier[1] = nn.Linear(in_features, num_classes)  # type: ignore as it is a sequential, able to be indexed
 
         self.optimizer = torch.optim.Adam(model.parameters(), lr=self.lr)
         return model.to(self.device)
 
-    def _build_someothernet(self, num_classes):
-        model = models.efficientnet_b0(weights="DEFAULT")  # find the right other cnn
-        # this efficientnet has 1280 features
-        in_features = model.classifier[1].in_features
-        model.classifier[1] = nn.Linear(in_features, num_classes)  # type: ignore as it is sequential, able to be indexed
+    def _build_densenet(self, num_classes):
+        model = models.densenet121(
+            weights="DEFAULT"
+        )  # may want to find a cnn not trained on imagenet
+        in_features = model.classifier.in_features
+        model.classifier = nn.Linear(in_features, num_classes)
+
+        self.optimizer = torch.optim.Adam(model.parameters(), lr=self.lr)
+        return model.to(self.device)
+
+    def _build_convnext(self, num_classes):
+        model = models.convnext_tiny(
+            weights="DEFAULT"
+        )  # convnext v2 exists not in pytorch, different sizes of that up to "huge" ~660 mil
+        # Replace the classifier head
+        in_features = (
+            model.classifier[2].in_features
+        )  # ConvNeXt classifier has a sequential with layers; layer 2 is Linear
+        model.classifier[2] = nn.Linear(in_features, num_classes)  # type: ignore as it is a sequential, able to be indexed
 
         self.optimizer = torch.optim.Adam(model.parameters(), lr=self.lr)
         return model.to(self.device)

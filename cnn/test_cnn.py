@@ -71,22 +71,24 @@ class test_cnn:
 
         num_classes = self.test_loader.dataset.get_num_classes()  # type: ignore as all the datasets have get_num_classes
 
-        if self.name == "efficientnet":
-            self.model = self._build_efficientnet(num_classes)
+        if self.name == "efficientnet_v2":
+            self.model = self._build_efficientnet_v2(num_classes)
 
-    def _build_efficientnet(self, num_classes):
+    def _build_efficientnet_v2(self, num_classes):
         zero_shot = False
         if zero_shot:
-            model = models.efficientnet_b0(weights="DEFAULT")
+            model = models.efficientnet_v2_m(weights="DEFAULT")
             in_features = model.classifier[1].in_features
             model.classifier[1] = nn.Linear(in_features, num_classes)  # type: ignore as it is a sequential, able to be indexed
         else:
-            model = models.efficientnet_b0()
+            model = models.efficientnet_v2_m()
             in_features = model.classifier[1].in_features
             model.classifier[1] = nn.Linear(in_features, num_classes)  # type: ignore as it is a sequential, able to be indexed
             model.load_state_dict(
                 torch.load(
-                    os.path.join(args.weights_dir, f"{self.name}_{args.dataset}_fine_tuned.pt"),
+                    os.path.join(
+                        args.weights_dir, f"{self.name}_{args.dataset}_fine_tuned.pt"
+                    ),
                     map_location=self.device,
                 )
             )

@@ -31,7 +31,7 @@ python train_cnn.py \
   --weights_dir "$weights_dir" \
   --data_dir "$data_dir" \
   --metadata_dir "$metadata_dir" \
-  --model_name "efficientnet" \
+  --model_name "efficientnet_v2" \
   --num_epochs 6 \
   --dataset "chestxray"
 
@@ -40,5 +40,5 @@ python test_cnn.py \
   --weights_dir "$weights_dir" \
   --data_dir "$data_dir" \
   --metadata_dir "$metadata_dir" \
-  --model_name "efficientnet" \
+  --model_name "efficientnet_v2" \
   --dataset "chestxray"

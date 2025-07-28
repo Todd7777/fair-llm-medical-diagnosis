@@ -1,13 +1,13 @@
-efficientnet:
+efficientnet_v2:
   data:
     batch_size: 64
 
   training:
     lr: 0.001
 
-someothernet:
+densenet:
   data:
-    batch_size:
+    batch_size: 64
 
   training:
-    lr:
+    lr: 0.001

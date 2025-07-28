@@ -9,7 +9,7 @@ import data.makedatasets.datasets as datasets
 # can split up into 2 dirs for train and val
 def make_cnn_dataloader(data_args, dataset_class, batch_size):
     transform = None
-    if data_args["model_name"] == "efficientnet":
+    if data_args["model_name"] == "efficientnet_v2":
         transform = transforms.Compose(
             [
                 transforms.Resize(256),
@@ -21,14 +21,16 @@ def make_cnn_dataloader(data_args, dataset_class, batch_size):
                 ),  # common values for NNs trained on imagenet
             ]
         )
-    elif data_args["model_name"] == "someothernet":
+    elif data_args["model_name"] == "densenet":
         transform = transforms.Compose(
             [
                 transforms.Resize(256),
                 transforms.CenterCrop(224),
                 # transforms.RandomHorizontalFlip(),   # maybe
                 transforms.ToTensor(),
-                transforms.Normalize(mean=[0, 0, 0], std=[0, 0, 0]),
+                transforms.Normalize(
+                    mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
+                ),  # common values for NNs trained on imagenet
             ]
         )
 
