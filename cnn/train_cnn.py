@@ -17,6 +17,13 @@ from torch.distributed import init_process_group, destroy_process_group
 import torch.multiprocessing as mp
 from torch.utils.data.distributed import DistributedSampler
 from torch.nn.parallel import DistributedDataParallel as DDP
+import torch.distributed as dist
+import sys
+
+sys.path.append("..")
+import training_utils.early_stopping as early_stopping
+
+sys.path.remove("..")
 
 
 def load_config(path):
@@ -56,7 +63,7 @@ DATASET_CLASSES = {
 
 # using adam as optimizing alg
 # num workers should = num cpu threads(for data loading), currently at 4 workers, batches of 64
-class train_cnn:
+class TrainCNN:
     def __init__(self, process_rank, world_size, use_cuda):
         self.use_cuda = use_cuda
         self.name = args.model_name
@@ -110,13 +117,26 @@ class train_cnn:
         self.optimizer = None
         self.warmup_scheduler = None
 
+        os.makedirs(args.weights_dir, exist_ok=True)
+        checkpoint_path = os.path.join(
+            args.weights_dir, f"{self.name}_{args.dataset}_fine_tuned_earlystop.pt"
+        )
         num_classes = self.train_loader.dataset.get_num_classes()  # type: ignore as all the datasets have get_num_classes
         if self.name == "efficientnet_v2":
             self.model = self._build_efficientnet_v2(num_classes)
+            self.early_stopping = early_stopping.EarlyStopping(
+                patience=4, path=checkpoint_path
+            )
         elif self.name == "densenet":
             self.model = self._build_densenet(num_classes)
+            self.early_stopping = early_stopping.EarlyStopping(
+                patience=6, path=checkpoint_path
+            )
         elif self.name == "convnext":
             self.model = self._build_convnext(num_classes)
+            self.early_stopping = early_stopping.EarlyStopping(
+                patience=6, path=checkpoint_path
+            )
         else:
             raise Exception("wrong model name")
 
@@ -184,12 +204,17 @@ class train_cnn:
             print(f"Model saved to {path}")
 
     def train(self):
-        num_epochs = config[self.name]["training"]["epochs"]
-        self.model.train()
+        model_to_pass = (
+            self.model.module if hasattr(self.model, "module") else self.model
+        )
 
         os.makedirs("results", exist_ok=True)
         out_file = open("results/train_results.txt", "w")
         out_file.write(f"Training using seed: {seed}\n")
+
+        num_epochs = config[self.name]["training"]["epochs"]
+
+        self.model.train()
 
         for epoch in range(num_epochs):
             self.train_sampler.set_epoch(epoch)
@@ -227,7 +252,18 @@ class train_cnn:
                 f"Epoch {epoch + 1}: Loss: {epoch_loss / len(self.train_loader):.4f} | Accuracy: {acc:.2f}%\n"
             )
 
-            self.validate(out_file)
+            val_loss = self.validate(out_file)
+
+            self.early_stopping(val_loss, model_to_pass)
+            stop_flag = torch.tensor(0, device=self.device)
+            if self.early_stopping.early_stop:
+                stop_flag += 1
+
+            dist.all_reduce(stop_flag, op=dist.ReduceOp.SUM)
+
+            if stop_flag.item() > 0:
+                print(f"Process rank {dist.get_rank()} stopping early.")
+                break
 
             if self.use_cuda:
                 print(
@@ -241,11 +277,16 @@ class train_cnn:
                 )
 
         out_file.close()
+        if self.early_stopping.early_stop is False:
+            self.early_stopping.save_checkpoint(
+                self.early_stopping.val_loss_best, model_to_pass
+            )
 
     def validate(self, out_file):
         self.model.eval()
         correct = 0
         total = 0
+        valid_loss = 0
 
         with torch.no_grad():
             for batch in self.eval_loader:
@@ -253,15 +294,21 @@ class train_cnn:
                 labels = batch["label"].to(self.device)
 
                 outputs = self.model(inputs)
+
+                loss = self.criterion(outputs, labels)
+
+                valid_loss += loss.item()
                 _, preds = torch.max(outputs, 1)
                 correct += (preds == labels).sum().item()
                 total += labels.size(0)
 
         acc = 100 * correct / total
+        avg_loss = valid_loss / len(self.eval_loader)
         print(f"Validation Accuracy: {acc:.2f}%")
-        out_file.write(f"Validation Accuracy: {acc:.2f}%\n\n")
-
+        out_file.write(f"Validation Accuracy: {acc:.2f}%")
+        out_file.write(f"Validation Loss per batch: {avg_loss}\n\n")
         self.model.train()
+        return avg_loss
 
 
 def ddp_setup(process_rank, world_size, use_cuda):
@@ -275,7 +322,7 @@ def ddp_setup(process_rank, world_size, use_cuda):
 
 def main(process_rank, world_size, use_cuda):
     ddp_setup(process_rank, world_size, use_cuda)
-    trainer = train_cnn(process_rank, world_size, use_cuda)
+    trainer = TrainCNN(process_rank, world_size, use_cuda)
     trainer.train()
     destroy_process_group()
 

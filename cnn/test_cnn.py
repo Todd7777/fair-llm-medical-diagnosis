@@ -64,7 +64,7 @@ config = load_config("cnn_configs.yaml")
 seed = "NOT IMPLEMENTED"
 
 
-class test_cnn:
+class TestCNN:
     def __init__(self, process_rank, world_size, use_cuda):
         self.use_cuda = use_cuda
         self.name = args.model_name
@@ -227,7 +227,7 @@ def ddp_setup(process_rank, world_size, use_cuda):
 
 def main(process_rank, world_size, use_cuda):
     ddp_setup(process_rank, world_size, use_cuda)
-    tester = test_cnn(process_rank, world_size, use_cuda)
+    tester = TestCNN(process_rank, world_size, use_cuda)
     tester.test()
     destroy_process_group()
 
