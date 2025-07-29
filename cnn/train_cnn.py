@@ -119,7 +119,7 @@ class TrainCNN:
 
         os.makedirs(args.weights_dir, exist_ok=True)
         checkpoint_path = os.path.join(
-            args.weights_dir, f"{self.name}_{args.dataset}_fine_tuned_earlystop.pt"
+            args.weights_dir, f"{self.name}_{args.dataset}_fine_tuned_best.pt"
         )
         num_classes = self.train_loader.dataset.get_num_classes()  # type: ignore as all the datasets have get_num_classes
         if self.name == "efficientnet_v2":
@@ -192,7 +192,7 @@ class TrainCNN:
     def save_model(self, process_rank):
         os.makedirs(args.weights_dir, exist_ok=True)
         path = os.path.join(
-            args.weights_dir, f"{self.name}_{args.dataset}_fine_tuned.pt"
+            args.weights_dir, f"{self.name}_{args.dataset}_fine_tuned_last_epoch.pt"
         )
         if process_rank == 0:
             model_to_save = (

@@ -128,7 +128,8 @@ class TestCNN:
             model.load_state_dict(
                 torch.load(
                     os.path.join(
-                        args.weights_dir, f"{self.name}_{args.dataset}_fine_tuned.pt"
+                        args.weights_dir,
+                        f"{self.name}_{args.dataset}_fine_tuned_best.pt",
                     ),
                     map_location=self.device,
                 )
@@ -149,7 +150,8 @@ class TestCNN:
             model.load_state_dict(
                 torch.load(
                     os.path.join(
-                        args.weights_dir, f"{self.name}_{args.dataset}_fine_tuned.pt"
+                        args.weights_dir,
+                        f"{self.name}_{args.dataset}_fine_tuned_best.pt",
                     ),
                     map_location=self.device,
                 )
@@ -170,7 +172,8 @@ class TestCNN:
             model.load_state_dict(
                 torch.load(
                     os.path.join(
-                        args.weights_dir, f"{self.name}_{args.dataset}_fine_tuned.pt"
+                        args.weights_dir,
+                        f"{self.name}_{args.dataset}_fine_tuned_best.pt",
                     ),
                     map_location=self.device,
                 )
