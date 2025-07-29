@@ -47,10 +47,14 @@ def parse_args():
     parser.add_argument(
         "--dataset", required=True, help='"retinal", "pathology", "chestxray"'
     )
+    parser.add_argument(
+        "--exclude_gpus",
+        required=False,
+        help='Comma-separated list of GPU device IDs to exclude from use. E.g., "0,2"',
+    )
     return parser.parse_args()
 
 
-args = parse_args()
 config = load_config("cnn_configs.yaml")
 seed = "NOT IMPLEMENTED"
 
@@ -64,29 +68,30 @@ DATASET_CLASSES = {
 # using adam as optimizing alg
 # num workers should = num cpu threads(for data loading), currently at 4 workers, batches of 64
 class TrainCNN:
-    def __init__(self, process_rank, world_size, use_cuda):
+    def __init__(self, process_rank, world_size, use_cuda, args):
+        self.args = args
         self.use_cuda = use_cuda
-        self.name = args.model_name
+        self.name = self.args.model_name
         self.device = torch.device(f"cuda:{process_rank}" if self.use_cuda else "cpu")
         print("Using device:", self.device)
 
         train_dataset = cnn_dataset_maker.make_cnn_dataset(
             data_args={
                 "dataset_type": "train",
-                "data_dir": args.data_dir,
-                "metadata_dir": args.metadata_dir,
+                "data_dir": self.args.data_dir,
+                "metadata_dir": self.args.metadata_dir,
                 "model_name": self.name,
             },
-            dataset_class=DATASET_CLASSES[args.dataset],
+            dataset_class=DATASET_CLASSES[self.args.dataset],
         )
         eval_dataset = cnn_dataset_maker.make_cnn_dataset(
             data_args={
                 "dataset_type": "eval",
-                "data_dir": args.data_dir,
-                "metadata_dir": args.metadata_dir,
+                "data_dir": self.args.data_dir,
+                "metadata_dir": self.args.metadata_dir,
                 "model_name": self.name,
             },
-            dataset_class=DATASET_CLASSES[args.dataset],
+            dataset_class=DATASET_CLASSES[self.args.dataset],
         )
 
         self.train_sampler = DistributedSampler(
@@ -117,9 +122,9 @@ class TrainCNN:
         self.optimizer = None
         self.warmup_scheduler = None
 
-        os.makedirs(args.weights_dir, exist_ok=True)
+        os.makedirs(self.args.weights_dir, exist_ok=True)
         checkpoint_path = os.path.join(
-            args.weights_dir, f"{self.name}_{args.dataset}_fine_tuned_best.pt"
+            self.args.weights_dir, f"{self.name}_{self.args.dataset}_fine_tuned_best.pt"
         )
         num_classes = self.train_loader.dataset.get_num_classes()  # type: ignore as all the datasets have get_num_classes
         if self.name == "efficientnet_v2":
@@ -190,9 +195,10 @@ class TrainCNN:
         return model.to(self.device)
 
     def save_model(self, process_rank):
-        os.makedirs(args.weights_dir, exist_ok=True)
+        os.makedirs(self.args.weights_dir, exist_ok=True)
         path = os.path.join(
-            args.weights_dir, f"{self.name}_{args.dataset}_fine_tuned_last_epoch.pt"
+            self.args.weights_dir,
+            f"{self.name}_{self.args.dataset}_fine_tuned_last_epoch.pt",
         )
         if process_rank == 0:
             model_to_save = (
@@ -321,8 +327,18 @@ def ddp_setup(process_rank, world_size, use_cuda):
 
 
 def main(process_rank, world_size, use_cuda):
+    args = parse_args()
+
+    # Exclude user defined GPUs
+    excluded = args.exclude_gpus.split(",") if args.exclude_gpus else []
+    available_gpus = [str(i) for i in range(torch.cuda.device_count())]
+    allowed_gpus = [gpu for gpu in available_gpus if gpu not in excluded]
+    os.environ["CUDA_VISIBLE_DEVICES"] = ",".join(allowed_gpus)
+
+    print(f"Visible Unusued GPUs: {os.environ['CUDA_VISIBLE_DEVICES']}")
+
     ddp_setup(process_rank, world_size, use_cuda)
-    trainer = TrainCNN(process_rank, world_size, use_cuda)
+    trainer = TrainCNN(process_rank, world_size, use_cuda, args)
     trainer.train()
     destroy_process_group()
 
