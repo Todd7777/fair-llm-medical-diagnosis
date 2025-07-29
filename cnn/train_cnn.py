@@ -8,11 +8,6 @@ from tqdm import tqdm
 import os
 import yaml
 import argparse
-from data.makedatasets.datasets import (
-    RetinalImageDataset,
-    ChestXRayDataset,
-    PathologyImageDataset,
-)
 from torch.distributed import init_process_group, destroy_process_group
 import torch.multiprocessing as mp
 from torch.utils.data.distributed import DistributedSampler
@@ -22,6 +17,11 @@ import sys
 
 sys.path.append("..")
 import training_utils.early_stopping as early_stopping
+from data.makedatasets.datasets import (
+    RetinalImageDataset,
+    ChestXRayDataset,
+    PathologyImageDataset,
+)
 
 sys.path.remove("..")
 

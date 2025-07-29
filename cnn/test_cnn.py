@@ -8,16 +8,22 @@ import yaml
 from tqdm import tqdm
 import argparse
 import os
+
+import torch.multiprocessing as mp
+from torch.distributed import init_process_group, destroy_process_group
+from torch.utils.data.distributed import DistributedSampler
+from torch.nn.parallel import DistributedDataParallel as DDP
+
+import sys
+
+sys.path.append("..")
 from data.makedatasets.datasets import (
     RetinalImageDataset,
     ChestXRayDataset,
     PathologyImageDataset,
 )
 
-import torch.multiprocessing as mp
-from torch.distributed import init_process_group, destroy_process_group
-from torch.utils.data.distributed import DistributedSampler
-from torch.nn.parallel import DistributedDataParallel as DDP
+sys.path.remove("..")
 
 
 def load_config(path):
