@@ -3,7 +3,7 @@
 import torch
 import torch.nn as nn
 import torchvision.models as models
-import cnn_dataloaders
+import cnn_dataset_maker
 from tqdm import tqdm
 import os
 import yaml
@@ -13,9 +13,12 @@ from data.makedatasets.datasets import (
     ChestXRayDataset,
     PathologyImageDataset,
 )
+from torch.distributed import init_process_group, destroy_process_group
+import torch.multiprocessing as mp
+from torch.utils.data.distributed import DistributedSampler
+from torch.nn.parallel import DistributedDataParallel as DDP
 
 
-# potentially use argparse to make optional arguments to pick exactly where to save model weights and whatever else
 def load_config(path):
     with open(path, "r") as f:
         return yaml.safe_load(f)
@@ -54,15 +57,13 @@ DATASET_CLASSES = {
 # using adam as optimizing alg
 # num workers should = num cpu threads(for data loading), currently at 4 workers, batches of 64
 class train_cnn:
-    def __init__(
-        self,
-    ):
+    def __init__(self, process_rank, world_size, use_cuda):
+        self.use_cuda = use_cuda
         self.name = args.model_name
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.device = torch.device(f"cuda:{process_rank}" if self.use_cuda else "cpu")
         print("Using device:", self.device)
-        self.lr = config[self.name]["training"]["lr"]
-        self.criterion = nn.CrossEntropyLoss()  # If dataset is multiple diseases per image, use nn.BCEWithLogitsLoss instead of nn.CrossEntropyLoss
-        self.train_loader = cnn_dataloaders.make_cnn_dataloader(
+
+        train_dataset = cnn_dataset_maker.make_cnn_dataset(
             data_args={
                 "dataset_type": "train",
                 "data_dir": args.data_dir,
@@ -70,9 +71,8 @@ class train_cnn:
                 "model_name": self.name,
             },
             dataset_class=DATASET_CLASSES[args.dataset],
-            batch_size=config[self.name]["data"]["batch_size"],
         )
-        self.eval_loader = cnn_dataloaders.make_cnn_dataloader(
+        eval_dataset = cnn_dataset_maker.make_cnn_dataset(
             data_args={
                 "dataset_type": "eval",
                 "data_dir": args.data_dir,
@@ -80,8 +80,35 @@ class train_cnn:
                 "model_name": self.name,
             },
             dataset_class=DATASET_CLASSES[args.dataset],
-            batch_size=config[self.name]["data"]["batch_size"],
         )
+
+        self.train_sampler = DistributedSampler(
+            train_dataset, num_replicas=world_size, rank=process_rank, shuffle=True
+        )
+        self.eval_sampler = DistributedSampler(
+            eval_dataset, num_replicas=world_size, rank=process_rank, shuffle=False
+        )
+
+        self.train_loader = torch.utils.data.DataLoader(
+            train_dataset,
+            batch_size=config[self.name]["data"]["batch_size"],
+            sampler=self.train_sampler,
+            num_workers=4,
+            pin_memory=True if self.use_cuda else False,
+        )
+        self.eval_loader = torch.utils.data.DataLoader(
+            eval_dataset,
+            batch_size=config[self.name]["data"]["batch_size"],
+            sampler=self.eval_sampler,
+            num_workers=4,
+            pin_memory=True if self.use_cuda else False,
+        )
+
+        self.lr = config[self.name]["training"]["lr"]
+        self.criterion = nn.CrossEntropyLoss()  # If dataset is multiple diseases per image, use nn.BCEWithLogitsLoss instead of nn.CrossEntropyLoss
+        self.weight_decay = config[self.name]["training"]["weight_decay"]
+        self.optimizer = None
+        self.warmup_scheduler = None
 
         num_classes = self.train_loader.dataset.get_num_classes()  # type: ignore as all the datasets have get_num_classes
         if self.name == "efficientnet_v2":
@@ -90,6 +117,20 @@ class train_cnn:
             self.model = self._build_densenet(num_classes)
         elif self.name == "convnext":
             self.model = self._build_convnext(num_classes)
+        else:
+            raise Exception("wrong model name")
+
+        if self.use_cuda:
+            self.model = DDP(self.model, device_ids=[process_rank])
+        else:
+            self.model = DDP(self.model)  # no device_ids for CPU
+
+        if "warmup_steps" in config[self.name]["training"]:
+            self.warmup_scheduler = torch.optim.lr_scheduler.LinearLR(
+                self.optimizer,  # type: ignore as will always be instantiated
+                start_factor=0.0,
+                total_iters=config[self.name]["training"]["warmup_steps"],
+            )
 
     # all pretrained on imagenet
     def _build_efficientnet_v2(self, num_classes):
@@ -122,16 +163,25 @@ class train_cnn:
         )  # ConvNeXt classifier has a sequential with layers; layer 2 is Linear
         model.classifier[2] = nn.Linear(in_features, num_classes)  # type: ignore as it is a sequential, able to be indexed
 
-        self.optimizer = torch.optim.Adam(model.parameters(), lr=self.lr)
+        self.optimizer = torch.optim.AdamW(
+            model.parameters(),
+            lr=self.lr,
+        )
         return model.to(self.device)
 
-    def save_model(self):
+    def save_model(self, process_rank):
         os.makedirs(args.weights_dir, exist_ok=True)
         path = os.path.join(
             args.weights_dir, f"{self.name}_{args.dataset}_fine_tuned.pt"
         )
-        torch.save(self.model.state_dict(), path)
-        print(f"Model saved to {path}")
+        if process_rank == 0:
+            model_to_save = (
+                self.model.module
+                if hasattr(self.model, "module")
+                else self.model  # gpu has attr module
+            )
+            torch.save(model_to_save.state_dict(), path)  # type: ignore
+            print(f"Model saved to {path}")
 
     def train(self):
         num_epochs = config[self.name]["training"]["epochs"]
@@ -142,6 +192,8 @@ class train_cnn:
         out_file.write(f"Training using seed: {seed}\n")
 
         for epoch in range(num_epochs):
+            self.train_sampler.set_epoch(epoch)
+            self.eval_sampler.set_epoch(epoch)
             epoch_loss = 0.0
             correct = 0
             total = 0
@@ -154,9 +206,11 @@ class train_cnn:
 
                 outputs = self.model(inputs)  # forward pass
                 loss = self.criterion(outputs, labels)
-                self.optimizer.zero_grad()
+                self.optimizer.zero_grad()  # type: ignore as optimizer is instantiated
                 loss.backward()
-                self.optimizer.step()
+                self.optimizer.step()  # type: ignore
+                if self.warmup_scheduler is not None:
+                    self.warmup_scheduler.step()
 
                 epoch_loss += loss.item()
                 _, preds = torch.max(
@@ -174,14 +228,17 @@ class train_cnn:
             )
 
             self.validate(out_file)
-            print(
-                "\nCuda memory allocated (GB):", torch.cuda.memory_allocated() / 1024**3
-            )
-            print(
-                "Cuda max memory reserved (GB):",
-                torch.cuda.max_memory_reserved() / 1024**3,
-                "\n",
-            )
+
+            if self.use_cuda:
+                print(
+                    "\nCuda memory allocated (GB):",
+                    torch.cuda.memory_allocated() / 1024**3,
+                )
+                print(
+                    "Cuda max memory reserved (GB):",
+                    torch.cuda.max_memory_reserved() / 1024**3,
+                    "\n",
+                )
 
         out_file.close()
 
@@ -207,10 +264,23 @@ class train_cnn:
         self.model.train()
 
 
-def run_training():
-    new_train = train_cnn()
-    new_train.train()
-    new_train.save_model()
+def ddp_setup(process_rank, world_size, use_cuda):
+    os.environ["MASTER_ADDR"] = "localhost"
+    os.environ["MASTER_PORT"] = "12355"
+    backend = "nccl" if use_cuda else "gloo"
+    if use_cuda:
+        torch.cuda.set_device(process_rank)
+    init_process_group(backend=backend, rank=process_rank, world_size=world_size)
 
 
-run_training()
+def main(process_rank, world_size, use_cuda):
+    ddp_setup(process_rank, world_size, use_cuda)
+    trainer = train_cnn(process_rank, world_size, use_cuda)
+    trainer.train()
+    destroy_process_group()
+
+
+if __name__ == "__main__":
+    use_cuda = torch.cuda.is_available()
+    world_size = torch.cuda.device_count() if use_cuda else 1
+    mp.spawn(main, args=(world_size, use_cuda), nprocs=world_size)  # type: ignore

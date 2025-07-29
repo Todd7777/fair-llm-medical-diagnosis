@@ -1,13 +1,8 @@
 from torchvision import transforms
 
-import sys
-
-sys.path.append("..")
-import data.makedatasets.datasets as datasets
-
 
 # can split up into 2 dirs for train and val
-def make_cnn_dataloader(data_args, dataset_class, batch_size):
+def make_cnn_dataset(data_args, dataset_class):
     transform = None
     if data_args["model_name"] == "efficientnet_v2":
         transform = transforms.Compose(
@@ -53,9 +48,13 @@ def make_cnn_dataloader(data_args, dataset_class, batch_size):
 
     dataset = dataset_class(**data_args)
 
-    return datasets.create_data_loader(
+    return dataset
+
+    """
+    return 
+    datasets.create_data_loader(
         dataset,
         batch_size=batch_size,
         shuffle=(data_args["dataset_type"] == "train"),
         num_workers=4,
-    )
+    )"""
