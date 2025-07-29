@@ -148,7 +148,7 @@ class TrainCNN:
         if "warmup_steps" in config[self.name]["training"]:
             self.warmup_scheduler = torch.optim.lr_scheduler.LinearLR(
                 self.optimizer,  # type: ignore as will always be instantiated
-                start_factor=0.0,
+                start_factor=0.1,
                 total_iters=config[self.name]["training"]["warmup_steps"],
             )
 

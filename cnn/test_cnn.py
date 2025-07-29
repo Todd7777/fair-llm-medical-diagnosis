@@ -77,6 +77,14 @@ class TestCNN:
         self.device = torch.device(f"cuda:{process_rank}" if self.use_cuda else "cpu")
         print("Using device:", self.device)
         self.lr = config[self.name]["training"]["lr"]
+
+        if args.zero_shot == "True":
+            self.zero_shot = True
+        elif args.zero_shot == "False":
+            self.zero_shot = False
+        else:
+            raise Exception('Argument for --zero_shot must be either "True" or "False"')
+
         test_dataset = cnn_dataset_maker.make_cnn_dataset(
             data_args={
                 "dataset_type": "test",
@@ -114,13 +122,6 @@ class TestCNN:
             self.model = DDP(self.model, device_ids=[process_rank])
         else:
             self.model = DDP(self.model)  # no device_ids for CPU
-
-        if args.zero_shot == "True":
-            self.zero_shot = True
-        elif args.zero_shot == "False":
-            self.zero_shot = False
-        else:
-            raise Exception('Argument for --zero_shot must be either "True" or "False"')
 
     def _build_efficientnet_v2(self, num_classes):
         if self.zero_shot:
