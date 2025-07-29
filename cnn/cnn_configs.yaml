@@ -4,20 +4,26 @@ efficientnet_v2:
 
   training:
     lr: 0.001
-    epochs: 6
+    epochs: 18
+    weight_decay: .0001
+    warmup_steps: 3
 
 densenet: # apparantly needs more epochs than efficientnet v2
   data:
     batch_size: 64
 
   training:
-    lr: 0.001
-    epochs: 6
+    lr: 0.0005
+    epochs: 30
+    weight_decay: .0001
+    warmup_steps: 5
 
 convnext: # often uses a cosine decay schedule
   data:
-    batch_size: 32
-      
+    batch_size: 64
+
   training:
-    lr: 0.0008
-    epochs: 6
+    lr: 0.001
+    epochs: 30
+    weight_decay: .05
+    warmup_steps: 5
