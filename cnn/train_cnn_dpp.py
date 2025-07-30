@@ -27,6 +27,27 @@ from data.makedatasets.datasets import (
 
 sys.path.remove("..")
 
+import random
+import numpy as np
+
+
+def set_seed(seed):
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
+
+    # CUDA deterministic behavior (may reduce performance)
+
+    # torch.use_deterministic_algorithms(True) (formerly torch.set_deterministic(True)) - more comprehensive, raises runtime error if operation has no deterministic implementation
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+
+
+seed = 42
+set_seed(seed)
+
 
 def load_config(path):
     with open(path, "r") as f:
@@ -78,7 +99,6 @@ if (args.exclude_gpus is not None and args.total_gpus is None) or (
 
 
 config = load_config("cnn_configs.yaml")
-seed = "NOT IMPLEMENTED"
 
 DATASET_CLASSES = {
     "retinal": RetinalImageDataset,
@@ -309,7 +329,7 @@ class TrainCnnDpp:
         out_file.close()
         if self.early_stopping.early_stop is False:
             self.early_stopping.save_checkpoint(
-                self.early_stopping.val_loss_best, model_to_pass
+                self.early_stopping.val_loss_best, model_to_pass, final_save=True
             )
 
     def validate(self, out_file):
@@ -342,6 +362,8 @@ class TrainCnnDpp:
 
 
 def main_worker(rank, world_size, args):
+    set_seed(seed + rank)
+
     use_cuda = torch.cuda.is_available() and args.total_gpus is not None
     if use_cuda:
         torch.cuda.set_device(rank)
