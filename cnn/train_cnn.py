@@ -71,26 +71,16 @@ def parse_args():
         type=int,
         help="Should be less than or equal to the number of cores",
     )
-    parser.add_argument("--total_gpus", required=False, help="The total number of GPUs")
     parser.add_argument(
-        "--exclude_gpus",
+        "--gpu",
         required=False,
-        help='Comma-separated list of GPU device IDs to exclude from use. E.g., "0,2"',
-    )
-    parser.add_argument(
-        "--include_gpus",
-        required=False,
-        help='Comma-separated list of GPU device IDs to include for use. E.g., "0,2"',
+        help="Choose the gpu to use. Ex. 0",
     )
     return parser.parse_args()
 
 
 args = parse_args()
 
-if (args.exclude_gpus is not None and args.total_gpus is None) or (
-    args.include_gpus is not None and args.total_gpus is None
-):
-    raise Exception("If exclude_gpus or include_gpus is used, so must be total_gpus")
 
 config = load_config("cnn_configs.yaml")
 
@@ -104,24 +94,18 @@ DATASET_CLASSES = {
 # using adam as optimizing alg
 # num workers should = num cpu threads(for data loading), currently at 4 workers, batches of 64
 class TrainCnn:
-    def __init__(self, device_ids):
+    def __init__(self):
         self.name = args.model_name
 
-        if device_ids is None or len(device_ids) < 1:
-            self.device_ids = [0]
+        if args.gpu is not None:
+            self.device = torch.device(f"cuda:{args.gpu}")
         else:
-            self.device_ids = device_ids
+            self.device = (
+                torch.device("cuda")
+                if torch.cuda.is_available()
+                else torch.device("cpu")
+            )
 
-        if (
-            self.device_ids is not None
-            and len(self.device_ids) > 0
-            and torch.cuda.is_available()
-        ):
-            self.device = torch.device(f"cuda:{self.device_ids[0]}")
-        else:
-            self.device = torch.device("cpu")
-
-        print("Using main device:", self.device)
         self.num_workers = args.num_workers
         train_dataset = cnn_dataset_maker.make_cnn_dataset(
             data_args={
@@ -134,7 +118,7 @@ class TrainCnn:
         )
         self.train_loader = DataLoader(
             train_dataset,
-            batch_size=len(self.device_ids) * config[self.name]["data"]["batch_size"],
+            batch_size=config[self.name]["data"]["batch_size"],
             num_workers=self.num_workers,
             shuffle=True,
             pin_memory=True,
@@ -150,7 +134,7 @@ class TrainCnn:
         )
         self.eval_loader = DataLoader(
             eval_dataset,
-            batch_size=len(self.device_ids) * config[self.name]["data"]["batch_size"],
+            batch_size=config[self.name]["data"]["batch_size"],
             num_workers=self.num_workers,
             shuffle=False,
             pin_memory=True,
@@ -185,14 +169,6 @@ class TrainCnn:
             )
         else:
             raise Exception("wrong model name")
-
-        if self.device_ids is not None and len(self.device_ids) > 1:
-            print(f"Using {len(self.device_ids)} devices")
-            self.model = nn.DataParallel(self.model, device_ids=self.device_ids)
-            self.model = self.model.cuda(device_ids[0])
-        else:
-            # single GPU or CPU
-            self.model = self.model.to(self.device)
 
         if "warmup_steps" in config[self.name]["training"]:
             self.warmup_scheduler = torch.optim.lr_scheduler.LinearLR(
@@ -343,26 +319,7 @@ class TrainCnn:
 
 
 def main():
-    args = parse_args()
-
-    total_gpus = int(args.total_gpus) if args.total_gpus else torch.cuda.device_count()
-    available_gpus = list(range(total_gpus))
-
-    if args.exclude_gpus:
-        exclude = set(int(x) for x in args.exclude_gpus.split(","))
-        available_gpus = [g for g in available_gpus if g not in exclude]
-
-    if args.include_gpus:
-        include = set(int(x) for x in args.include_gpus.split(","))
-        available_gpus = [g for g in available_gpus if g in include]
-
-    if available_gpus:
-        device_ids = available_gpus
-    else:
-        device_ids = None
-    print(f"Using GPUs: {device_ids}")
-
-    trainer = TrainCnn(device_ids)
+    trainer = TrainCnn()
     trainer.train()
 
 

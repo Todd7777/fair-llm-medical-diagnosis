@@ -116,7 +116,9 @@ class TrainCnnDdp:
         self.use_cuda = use_cuda
         self.name = self.args.model_name
         self.device = torch.device(f"cuda:{process_rank}" if self.use_cuda else "cpu")
-        print("Using main device:", self.device)
+
+        if self.is_master:
+            print("Using main device:", self.device)
 
         train_dataset = cnn_dataset_maker.make_cnn_dataset(
             data_args={
@@ -357,7 +359,7 @@ class TrainCnnDdp:
         self.model.eval()
         correct = torch.tensor(0, device=self.device)
         total = torch.tensor(0, device=self.device)
-        valid_loss_sum = torch.tensor(0, device=self.device)
+        valid_loss_sum = torch.tensor(0.0, device=self.device)
 
         with torch.no_grad():
             for batch in self.eval_loader:
@@ -403,7 +405,7 @@ def main_worker(rank, world_size, args):
         rank=rank,
     )
 
-    trainer = TrainCnnDpp(rank, world_size, use_cuda, args)
+    trainer = TrainCnnDdp(rank, world_size, use_cuda, args)
     trainer.train()
     trainer.save_model(rank)
 
