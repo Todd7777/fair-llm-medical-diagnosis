@@ -3,7 +3,7 @@ import torch.nn as nn
 
 
 class EarlyStopping:
-    def __init__(self, patience, delta=0, path="checkpoint.pt"):
+    def __init__(self, patience, delta=0, path="checkpoint.pt", is_master=True):
         self.patience = patience
         self.counter = 0
         self.best_score = None
@@ -11,6 +11,7 @@ class EarlyStopping:
         self.val_loss_best = float("inf")
         self.delta = delta
         self.path = path
+        self.is_master = is_master
 
     def __call__(self, val_loss, model):
         score = val_loss
@@ -24,7 +25,8 @@ class EarlyStopping:
                 self.early_stop = True
         else:
             self.best_score = score
-            self.save_checkpoint(val_loss, model)
+            if self.is_master:
+                self.save_checkpoint(val_loss, model)
             self.counter = 0
 
     def save_checkpoint(self, val_loss, model, final_save=False):

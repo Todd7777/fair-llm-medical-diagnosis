@@ -109,9 +109,10 @@ DATASET_CLASSES = {
 
 # using adam as optimizing alg
 # num workers should = num cpu threads(for data loading), currently at 4 workers, batches of 64
-class TrainCnnDpp:
+class TrainCnnDdp:
     def __init__(self, process_rank, world_size, use_cuda, args):
         self.args = args
+        self.is_master = process_rank == 0
         self.use_cuda = use_cuda
         self.name = self.args.model_name
         self.device = torch.device(f"cuda:{process_rank}" if self.use_cuda else "cpu")
@@ -174,17 +175,17 @@ class TrainCnnDpp:
         if self.name == "efficientnet_v2":
             self.model = self._build_efficientnet_v2(num_classes)
             self.early_stopping = early_stopping.EarlyStopping(
-                patience=4, path=checkpoint_path
+                patience=4, path=checkpoint_path, is_master=self.is_master
             )
         elif self.name == "densenet":
             self.model = self._build_densenet(num_classes)
             self.early_stopping = early_stopping.EarlyStopping(
-                patience=6, path=checkpoint_path
+                patience=6, path=checkpoint_path, is_master=self.is_master
             )
         elif self.name == "convnext":
             self.model = self._build_convnext(num_classes)
             self.early_stopping = early_stopping.EarlyStopping(
-                patience=6, path=checkpoint_path
+                patience=6, path=checkpoint_path, is_master=self.is_master
             )
         else:
             raise Exception("wrong model name")
@@ -273,36 +274,56 @@ class TrainCnnDpp:
             correct = 0
             total = 0
 
-            for batch in tqdm(
-                self.train_loader, desc=f"Epoch {epoch + 1}/{num_epochs}"
-            ):
+            tqdm_iterator = tqdm(
+                self.train_loader,
+                desc=f"Epoch {epoch + 1}/{num_epochs}",
+                disable=not self.is_master,
+            )
+
+            for batch in tqdm_iterator:
                 inputs = batch["image"].to(self.device, non_blocking=True)
                 labels = batch["label"].to(self.device, non_blocking=True)
 
                 outputs = self.model(inputs)  # forward pass
                 loss = self.criterion(outputs, labels)
-                self.optimizer.zero_grad()  # type: ignore as optimizer is instantiated
+                self.optimizer.zero_grad()  # type: ignore
                 loss.backward()
                 self.optimizer.step()  # type: ignore
                 if self.warmup_scheduler is not None:
                     self.warmup_scheduler.step()
 
-                epoch_loss += loss.item()
-                _, preds = torch.max(
-                    outputs, 1
-                )  # class with max probability for each sample in batch
+                batch_size = labels.size(0)
+                epoch_loss += (
+                    loss.item() * batch_size
+                )  # sum loss weighted by batch size
+                _, preds = torch.max(outputs, 1)
                 correct += (preds == labels).sum().item()
-                total += labels.size(0)
+                total += batch_size
 
-            acc = 100 * correct / total
-            print(
-                f"Epoch {epoch + 1}: Loss: {epoch_loss / len(self.train_loader):.4f} | Accuracy: {acc:.2f}%"
-            )
-            out_file.write(
-                f"Epoch {epoch + 1}: Loss: {epoch_loss / len(self.train_loader):.4f} | Accuracy: {acc:.2f}%\n"
-            )
+            # Convert to tensors for distributed reduction
+            loss_tensor = torch.tensor(epoch_loss, device=self.device)
+            correct_tensor = torch.tensor(correct, device=self.device)
+            total_tensor = torch.tensor(total, device=self.device)
 
-            val_loss = self.validate(out_file)
+            # Sum across all GPUs/processes
+            dist.all_reduce(loss_tensor, op=dist.ReduceOp.SUM)
+            dist.all_reduce(correct_tensor, op=dist.ReduceOp.SUM)
+            dist.all_reduce(total_tensor, op=dist.ReduceOp.SUM)
+
+            avg_loss = loss_tensor.item() / total_tensor.item()
+            accuracy = 100 * correct_tensor.item() / total_tensor.item()
+
+            if self.is_master:
+                print(
+                    f"Epoch {epoch + 1}: Loss: {avg_loss:.4f} | Accuracy: {accuracy:.2f}%"
+                )
+                out_file.write(
+                    f"Epoch {epoch + 1}: Loss: {avg_loss:.4f} | Accuracy: {accuracy:.2f}%\n"
+                )
+
+            val_loss = self.validate(
+                out_file
+            )  # should also modify validate similarly for aggregation
 
             self.early_stopping(val_loss, model_to_pass)
             stop_flag = torch.tensor(0, device=self.device)
@@ -334,29 +355,36 @@ class TrainCnnDpp:
 
     def validate(self, out_file):
         self.model.eval()
-        correct = 0
-        total = 0
-        valid_loss = 0
+        correct = torch.tensor(0, device=self.device)
+        total = torch.tensor(0, device=self.device)
+        valid_loss_sum = torch.tensor(0, device=self.device)
 
         with torch.no_grad():
             for batch in self.eval_loader:
-                inputs = batch["image"].to(self.device)
-                labels = batch["label"].to(self.device)
+                inputs = batch["image"].to(self.device, non_blocking=True)
+                labels = batch["label"].to(self.device, non_blocking=True)
 
                 outputs = self.model(inputs)
 
                 loss = self.criterion(outputs, labels)
 
-                valid_loss += loss.item()
+                batch_size = labels.size(0)
+                valid_loss_sum += loss.item() * batch_size
                 _, preds = torch.max(outputs, 1)
-                correct += (preds == labels).sum().item()
-                total += labels.size(0)
+                correct += (preds == labels).sum()
+                total += batch_size
 
-        acc = 100 * correct / total
-        avg_loss = valid_loss / len(self.eval_loader)
-        print(f"Validation Accuracy: {acc:.2f}%")
-        out_file.write(f"Validation Accuracy: {acc:.2f}%")
-        out_file.write(f"Validation Loss per batch: {avg_loss}\n\n")
+        dist.all_reduce(valid_loss_sum, op=dist.ReduceOp.SUM)
+        dist.all_reduce(correct, op=dist.ReduceOp.SUM)
+        dist.all_reduce(total, op=dist.ReduceOp.SUM)
+
+        acc = 100 * correct.item() / total.item()
+        avg_loss = valid_loss_sum.item() / total.item()
+
+        if self.is_master:
+            print(f"Validation Accuracy: {acc:.2f}%")
+            out_file.write(f"Validation Accuracy: {acc:.2f}%")
+            out_file.write(f"Validation Loss per batch: {avg_loss}\n\n")
         self.model.train()
         return avg_loss
 
