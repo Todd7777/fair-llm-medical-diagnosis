@@ -1,18 +1,10 @@
 #
 
-import torch
-import torch.nn as nn
-import torchvision.models as models
-import cnn_dataset_maker
 from tqdm import tqdm
 import os
 import yaml
 import argparse
-from torch.distributed import init_process_group, destroy_process_group
-import torch.multiprocessing as mp
-from torch.utils.data.distributed import DistributedSampler
-from torch.nn.parallel import DistributedDataParallel as DDP
-import torch.distributed as dist
+
 import sys
 
 sys.path.append("..")
@@ -48,9 +40,20 @@ def parse_args():
         "--dataset", required=True, help='"retinal", "pathology", "chestxray"'
     )
     parser.add_argument(
+        "--num_workers",
+        required=True,
+        help="Should be less than or equal to the number of cores",
+    )
+    parser.add_argument("--total_gpus", required=False, help="The total number of GPUs")
+    parser.add_argument(
         "--exclude_gpus",
         required=False,
         help='Comma-separated list of GPU device IDs to exclude from use. E.g., "0,2"',
+    )
+    parser.add_argument(
+        "--include_gpus",
+        required=False,
+        help='Comma-separated list of GPU device IDs to include for use. E.g., "0,2"',
     )
     return parser.parse_args()
 
@@ -101,18 +104,20 @@ class TrainCNN:
             eval_dataset, num_replicas=world_size, rank=process_rank, shuffle=False
         )
 
+        self.num_workers = args.num_workers
+
         self.train_loader = torch.utils.data.DataLoader(
             train_dataset,
             batch_size=config[self.name]["data"]["batch_size"],
             sampler=self.train_sampler,
-            num_workers=4,
+            num_workers=self.num_workers,
             pin_memory=True if self.use_cuda else False,
         )
         self.eval_loader = torch.utils.data.DataLoader(
             eval_dataset,
             batch_size=config[self.name]["data"]["batch_size"],
             sampler=self.eval_sampler,
-            num_workers=4,
+            num_workers=self.num_workers,
             pin_memory=True if self.use_cuda else False,
         )
 
@@ -326,17 +331,21 @@ def ddp_setup(process_rank, world_size, use_cuda):
     init_process_group(backend=backend, rank=process_rank, world_size=world_size)
 
 
-def main(process_rank, world_size, use_cuda):
-    args = parse_args()
+def setup_visible_gpus(include_gpus_str, exclude_gpus_str, total_physical_gpus):
+    if include_gpus_str:
+        included = [e.strip() for e in include_gpus_str.split(",") if e.strip()]
+        allowed_gpus = included
+    else:
+        excluded = exclude_gpus_str.split(",") if exclude_gpus_str else []
+        excluded = [e.strip() for e in excluded if e.strip()]
+        available_gpus = [str(i) for i in range(total_physical_gpus)]
+        allowed_gpus = [gpu for gpu in available_gpus if gpu not in excluded]
 
-    # Exclude user defined GPUs
-    excluded = args.exclude_gpus.split(",") if args.exclude_gpus else []
-    available_gpus = [str(i) for i in range(torch.cuda.device_count())]
-    allowed_gpus = [gpu for gpu in available_gpus if gpu not in excluded]
     os.environ["CUDA_VISIBLE_DEVICES"] = ",".join(allowed_gpus)
+    print(f"Visible GPUs after exclusion: {os.environ['CUDA_VISIBLE_DEVICES']}")
 
-    print(f"Visible Unusued GPUs: {os.environ['CUDA_VISIBLE_DEVICES']}")
 
+def main(process_rank, world_size, use_cuda, args):
     ddp_setup(process_rank, world_size, use_cuda)
     trainer = TrainCNN(process_rank, world_size, use_cuda, args)
     trainer.train()
@@ -344,6 +353,48 @@ def main(process_rank, world_size, use_cuda):
 
 
 if __name__ == "__main__":
-    use_cuda = torch.cuda.is_available()
-    world_size = torch.cuda.device_count() if use_cuda else 1
-    mp.spawn(main, args=(world_size, use_cuda), nprocs=world_size)  # type: ignore
+    args = parse_args()
+
+    if (args.exclude_gpus is not None and args.total_gpus is None) or (
+        args.include_gpus is not None and args.total_gpus is None
+    ):
+        raise Exception(
+            "If exclude_gpus or include_gpus is used, so must be total_gpus"
+        )
+
+    total_physical_gpus = int(args.total_gpus) if args.total_gpus else 0
+
+    if (
+        args.exclude_gpus is not None and not total_physical_gpus
+    ) or total_physical_gpus == 0:
+        raise Exception("If exclude_gpus is used, total_gpus must be specified and > 0")
+
+    if args.total_gpus is not None:
+        setup_visible_gpus(args.include_gpus, args.exclude_gpus, total_physical_gpus)
+
+    import torch
+    import torch.nn as nn
+    import torchvision.models as models
+    import cnn_dataset_maker
+    from torch.distributed import init_process_group, destroy_process_group
+    import torch.multiprocessing as mp
+    from torch.utils.data.distributed import DistributedSampler
+    from torch.nn.parallel import DistributedDataParallel as DDP
+    import torch.distributed as dist
+
+    visible_gpus = torch.cuda.device_count()
+
+    if visible_gpus == 0:
+        print("[INFO] No GPUs detected or visible. Using CPU.")
+        use_cuda = False
+        world_size = 1  # CPU
+    else:
+        print(f"[INFO] {visible_gpus} GPUs detected and will be used.")
+        use_cuda = True
+        world_size = visible_gpus
+
+    print(
+        f"[INFO] Using CUDA_VISIBLE_DEVICES={os.environ['CUDA_VISIBLE_DEVICES']} with {world_size} devices"
+    )
+
+    mp.spawn(main, args=(world_size, use_cuda, args), nprocs=world_size)  # type: ignore
