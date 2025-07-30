@@ -132,6 +132,7 @@ class TrainCnn:
             eval_dataset,
             batch_size=len(self.device_ids) * config[self.name]["data"]["batch_size"],
             num_workers=self.num_workers,
+            shuffle=False,
             pin_memory=True,
         )
 
