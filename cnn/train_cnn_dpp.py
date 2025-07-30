@@ -1,14 +1,20 @@
 #
 
-import torch
-import torch.nn as nn
-import torchvision.models as models
-from torch.utils.data import DataLoader
-import cnn_dataset_maker
 from tqdm import tqdm
 import os
 import yaml
 import argparse
+
+import torch
+import torch.nn as nn
+import torchvision.models as models
+import cnn_dataset_maker
+from torch.distributed import init_process_group, destroy_process_group
+import torch.multiprocessing as mp
+from torch.utils.data.distributed import DistributedSampler
+from torch.nn.parallel import DistributedDataParallel as DDP
+import torch.distributed as dist
+
 import sys
 
 sys.path.append("..")
@@ -22,7 +28,6 @@ from data.makedatasets.datasets import (
 sys.path.remove("..")
 
 
-# potentially use argparse to make optional arguments to pick exactly where to save model weights and whatever else
 def load_config(path):
     with open(path, "r") as f:
         return yaml.safe_load(f)
@@ -40,7 +45,7 @@ def parse_args():
     parser.add_argument(
         "--metadata_dir", required=True, help="DIRECTORY containing metadata files"
     )
-    parser.add_argument("--model_name", required=True, help="Model name in yaml config")
+    parser.add_argument("--model_name", required=True, help="Model name n yaml config")
     parser.add_argument(
         "--dataset", required=True, help='"retinal", "pathology", "chestxray"'
     )
@@ -71,6 +76,7 @@ if (args.exclude_gpus is not None and args.total_gpus is None) or (
 ):
     raise Exception("If exclude_gpus or include_gpus is used, so must be total_gpus")
 
+
 config = load_config("cnn_configs.yaml")
 seed = "NOT IMPLEMENTED"
 
@@ -83,56 +89,55 @@ DATASET_CLASSES = {
 
 # using adam as optimizing alg
 # num workers should = num cpu threads(for data loading), currently at 4 workers, batches of 64
-class TrainCnn:
-    def __init__(self, device_ids):
-        self.name = args.model_name
-
-        if device_ids is None or len(device_ids) < 1:
-            self.device_ids = [0]
-        else:
-            self.device_ids = device_ids
-
-        if (
-            self.device_ids is not None
-            and len(self.device_ids) > 0
-            and torch.cuda.is_available()
-        ):
-            self.device = torch.device(f"cuda:{self.device_ids[0]}")
-        else:
-            self.device = torch.device("cpu")
-
+class TrainCnnDpp:
+    def __init__(self, process_rank, world_size, use_cuda, args):
+        self.args = args
+        self.use_cuda = use_cuda
+        self.name = self.args.model_name
+        self.device = torch.device(f"cuda:{process_rank}" if self.use_cuda else "cpu")
         print("Using main device:", self.device)
-        self.num_workers = args.num_workers
+
         train_dataset = cnn_dataset_maker.make_cnn_dataset(
             data_args={
                 "dataset_type": "train",
-                "data_dir": args.data_dir,
-                "metadata_dir": args.metadata_dir,
+                "data_dir": self.args.data_dir,
+                "metadata_dir": self.args.metadata_dir,
                 "model_name": self.name,
             },
-            dataset_class=DATASET_CLASSES[args.dataset],
-        )
-        self.train_loader = DataLoader(
-            train_dataset,
-            batch_size=len(self.device_ids) * config[self.name]["data"]["batch_size"],
-            num_workers=self.num_workers,
-            shuffle=True,
-            pin_memory=True,
+            dataset_class=DATASET_CLASSES[self.args.dataset],
         )
         eval_dataset = cnn_dataset_maker.make_cnn_dataset(
             data_args={
                 "dataset_type": "eval",
-                "data_dir": args.data_dir,
-                "metadata_dir": args.metadata_dir,
+                "data_dir": self.args.data_dir,
+                "metadata_dir": self.args.metadata_dir,
                 "model_name": self.name,
             },
-            dataset_class=DATASET_CLASSES[args.dataset],
+            dataset_class=DATASET_CLASSES[self.args.dataset],
         )
-        self.eval_loader = DataLoader(
-            eval_dataset,
-            batch_size=len(self.device_ids) * config[self.name]["data"]["batch_size"],
+
+        self.train_sampler = DistributedSampler(
+            train_dataset, num_replicas=world_size, rank=process_rank, shuffle=True
+        )
+        self.eval_sampler = DistributedSampler(
+            eval_dataset, num_replicas=world_size, rank=process_rank, shuffle=False
+        )
+
+        self.num_workers = args.num_workers
+
+        self.train_loader = torch.utils.data.DataLoader(
+            train_dataset,
+            batch_size=config[self.name]["data"]["batch_size"],
+            sampler=self.train_sampler,
             num_workers=self.num_workers,
-            pin_memory=True,
+            pin_memory=True if self.use_cuda else False,
+        )
+        self.eval_loader = torch.utils.data.DataLoader(
+            eval_dataset,
+            batch_size=config[self.name]["data"]["batch_size"],
+            sampler=self.eval_sampler,
+            num_workers=self.num_workers,
+            pin_memory=True if self.use_cuda else False,
         )
 
         self.lr = config[self.name]["training"]["lr"]
@@ -141,11 +146,10 @@ class TrainCnn:
         self.optimizer = None
         self.warmup_scheduler = None
 
-        os.makedirs(args.weights_dir, exist_ok=True)
+        os.makedirs(self.args.weights_dir, exist_ok=True)
         checkpoint_path = os.path.join(
-            args.weights_dir, f"{self.name}_{args.dataset}_fine_tuned_best.pt"
+            self.args.weights_dir, f"{self.name}_{self.args.dataset}_fine_tuned_best.pt"
         )
-
         num_classes = self.train_loader.dataset.get_num_classes()  # type: ignore as all the datasets have get_num_classes
         if self.name == "efficientnet_v2":
             self.model = self._build_efficientnet_v2(num_classes)
@@ -165,13 +169,10 @@ class TrainCnn:
         else:
             raise Exception("wrong model name")
 
-        if self.device_ids is not None and len(self.device_ids) > 1:
-            print(f"Using {len(self.device_ids)} devices")
-            self.model = nn.DataParallel(self.model, device_ids=self.device_ids)
-            self.model = self.model.cuda(device_ids[0])
+        if self.use_cuda:
+            self.model = DDP(self.model, device_ids=[process_rank])
         else:
-            # single GPU or CPU
-            self.model = self.model.to(self.device)
+            self.model = DDP(self.model)  # no device_ids for CPU
 
         if "warmup_steps" in config[self.name]["training"]:
             self.warmup_scheduler = torch.optim.lr_scheduler.LinearLR(
@@ -211,16 +212,26 @@ class TrainCnn:
         )  # ConvNeXt classifier has a sequential with layers; layer 2 is Linear
         model.classifier[2] = nn.Linear(in_features, num_classes)  # type: ignore as it is a sequential, able to be indexed
 
-        self.optimizer = torch.optim.Adam(model.parameters(), lr=self.lr)
+        self.optimizer = torch.optim.AdamW(
+            model.parameters(),
+            lr=self.lr,
+        )
         return model.to(self.device)
 
-    def save_model(self):
-        os.makedirs(args.weights_dir, exist_ok=True)
+    def save_model(self, process_rank):
+        os.makedirs(self.args.weights_dir, exist_ok=True)
         path = os.path.join(
-            args.weights_dir, f"{self.name}_{args.dataset}_fine_tuned.pt"
+            self.args.weights_dir,
+            f"{self.name}_{self.args.dataset}_fine_tuned_last_epoch.pt",
         )
-        torch.save(self.model.state_dict(), path)
-        print(f"Model saved to {path}")
+        if process_rank == 0:
+            model_to_save = (
+                self.model.module
+                if hasattr(self.model, "module")
+                else self.model  # gpu has attr module
+            )
+            torch.save(model_to_save.state_dict(), path)  # type: ignore
+            print(f"Model saved to {path}")
 
     def train(self):
         model_to_pass = (
@@ -234,7 +245,10 @@ class TrainCnn:
         num_epochs = config[self.name]["training"]["epochs"]
 
         self.model.train()
+
         for epoch in range(num_epochs):
+            self.train_sampler.set_epoch(epoch)
+            self.eval_sampler.set_epoch(epoch)
             epoch_loss = 0.0
             correct = 0
             total = 0
@@ -271,15 +285,26 @@ class TrainCnn:
             val_loss = self.validate(out_file)
 
             self.early_stopping(val_loss, model_to_pass)
+            stop_flag = torch.tensor(0, device=self.device)
+            if self.early_stopping.early_stop:
+                stop_flag += 1
 
-            print(
-                "\nCuda memory allocated (GB):", torch.cuda.memory_allocated() / 1024**3
-            )
-            print(
-                "Cuda max memory reserved (GB):",
-                torch.cuda.max_memory_reserved() / 1024**3,
-                "\n",
-            )
+            dist.all_reduce(stop_flag, op=dist.ReduceOp.SUM)
+
+            if stop_flag.item() > 0:
+                print(f"Process rank {dist.get_rank()} stopping early.")
+                break
+
+            if self.use_cuda:
+                print(
+                    "\nCuda memory allocated (GB):",
+                    torch.cuda.memory_allocated() / 1024**3,
+                )
+                print(
+                    "Cuda max memory reserved (GB):",
+                    torch.cuda.max_memory_reserved() / 1024**3,
+                    "\n",
+                )
 
         out_file.close()
         if self.early_stopping.early_stop is False:
@@ -310,10 +335,29 @@ class TrainCnn:
         acc = 100 * correct / total
         avg_loss = valid_loss / len(self.eval_loader)
         print(f"Validation Accuracy: {acc:.2f}%")
-        out_file.write(f"Validation Accuracy: {acc:.2f}%\n\n")
-
+        out_file.write(f"Validation Accuracy: {acc:.2f}%")
+        out_file.write(f"Validation Loss per batch: {avg_loss}\n\n")
         self.model.train()
         return avg_loss
+
+
+def main_worker(rank, world_size, args):
+    use_cuda = torch.cuda.is_available() and args.total_gpus is not None
+    if use_cuda:
+        torch.cuda.set_device(rank)
+
+    dist.init_process_group(
+        backend="nccl" if use_cuda else "gloo",
+        init_method="env://",
+        world_size=world_size,
+        rank=rank,
+    )
+
+    trainer = TrainCnnDpp(rank, world_size, use_cuda, args)
+    trainer.train()
+    trainer.save_model(rank)
+
+    dist.destroy_process_group()
 
 
 def main():
@@ -330,15 +374,17 @@ def main():
         include = set(int(x) for x in args.include_gpus.split(","))
         available_gpus = [g for g in available_gpus if g in include]
 
-    if available_gpus:
-        device_ids = available_gpus
-    else:
-        device_ids = None
-    print(f"Using GPUs: {device_ids}")
+    world_size = len(available_gpus)
+    os.environ["MASTER_ADDR"] = "localhost"
+    os.environ["MASTER_PORT"] = "12355"
 
-    trainer = TrainCnn(device_ids)
-    trainer.train()
-    trainer.save_model()
+    # one process per GPU
+    mp.spawn(  # type: ignore
+        main_worker,
+        args=(world_size, args),
+        nprocs=world_size,
+        join=True,
+    )
 
 
 if __name__ == "__main__":

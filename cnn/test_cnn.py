@@ -8,22 +8,16 @@ import yaml
 from tqdm import tqdm
 import argparse
 import os
-
-import torch.multiprocessing as mp
-from torch.distributed import init_process_group, destroy_process_group
-from torch.utils.data.distributed import DistributedSampler
-from torch.nn.parallel import DistributedDataParallel as DDP
-
-import sys
-
-sys.path.append("..")
 from data.makedatasets.datasets import (
     RetinalImageDataset,
     ChestXRayDataset,
     PathologyImageDataset,
 )
 
-sys.path.remove("..")
+import torch.multiprocessing as mp
+from torch.distributed import init_process_group, destroy_process_group
+from torch.utils.data.distributed import DistributedSampler
+from torch.nn.parallel import DistributedDataParallel as DDP
 
 
 def load_config(path):
@@ -70,21 +64,13 @@ config = load_config("cnn_configs.yaml")
 seed = "NOT IMPLEMENTED"
 
 
-class TestCNN:
+class TestCnn:
     def __init__(self, process_rank, world_size, use_cuda):
         self.use_cuda = use_cuda
         self.name = args.model_name
         self.device = torch.device(f"cuda:{process_rank}" if self.use_cuda else "cpu")
         print("Using device:", self.device)
         self.lr = config[self.name]["training"]["lr"]
-
-        if args.zero_shot == "True":
-            self.zero_shot = True
-        elif args.zero_shot == "False":
-            self.zero_shot = False
-        else:
-            raise Exception('Argument for --zero_shot must be either "True" or "False"')
-
         test_dataset = cnn_dataset_maker.make_cnn_dataset(
             data_args={
                 "dataset_type": "test",
@@ -123,6 +109,13 @@ class TestCNN:
         else:
             self.model = DDP(self.model)  # no device_ids for CPU
 
+        if args.zero_shot == "True":
+            self.zero_shot = True
+        elif args.zero_shot == "False":
+            self.zero_shot = False
+        else:
+            raise Exception('Argument for --zero_shot must be either "True" or "False"')
+
     def _build_efficientnet_v2(self, num_classes):
         if self.zero_shot:
             model = models.efficientnet_v2_m(weights="DEFAULT")
@@ -135,8 +128,7 @@ class TestCNN:
             model.load_state_dict(
                 torch.load(
                     os.path.join(
-                        args.weights_dir,
-                        f"{self.name}_{args.dataset}_fine_tuned_best.pt",
+                        args.weights_dir, f"{self.name}_{args.dataset}_fine_tuned.pt"
                     ),
                     map_location=self.device,
                 )
@@ -157,8 +149,7 @@ class TestCNN:
             model.load_state_dict(
                 torch.load(
                     os.path.join(
-                        args.weights_dir,
-                        f"{self.name}_{args.dataset}_fine_tuned_best.pt",
+                        args.weights_dir, f"{self.name}_{args.dataset}_fine_tuned.pt"
                     ),
                     map_location=self.device,
                 )
@@ -179,8 +170,7 @@ class TestCNN:
             model.load_state_dict(
                 torch.load(
                     os.path.join(
-                        args.weights_dir,
-                        f"{self.name}_{args.dataset}_fine_tuned_best.pt",
+                        args.weights_dir, f"{self.name}_{args.dataset}_fine_tuned.pt"
                     ),
                     map_location=self.device,
                 )
@@ -237,7 +227,7 @@ def ddp_setup(process_rank, world_size, use_cuda):
 
 def main(process_rank, world_size, use_cuda):
     ddp_setup(process_rank, world_size, use_cuda)
-    tester = TestCNN(process_rank, world_size, use_cuda)
+    tester = TestCnn(process_rank, world_size, use_cuda)
     tester.test()
     destroy_process_group()
 
