@@ -271,6 +271,9 @@ class TrainCnn:
             val_loss = self.validate(out_file)
 
             self.early_stopping(val_loss, model_to_pass)
+            if self.early_stopping.early_stop:
+                print(f"Early stopping triggered at epoch {epoch + 1}")
+                break
 
             print(
                 "\nCuda memory allocated (GB):", torch.cuda.memory_allocated() / 1024**3
