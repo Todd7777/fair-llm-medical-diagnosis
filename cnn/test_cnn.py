@@ -82,11 +82,13 @@ class TestCnn:
             },
             dataset_class=DATASET_CLASSES[args.dataset],
         )
+
+        num_devices = torch.cuda.device_count() if torch.cuda.is_available() else 1
         self.test_loader = DataLoader(
             test_dataset,
-            batch_size=config[self.name]["data"]["batch_size"],
+            batch_size=num_devices * config[self.name]["data"]["batch_size"],
             num_workers=self.num_workers,
-            shuffle=True,
+            shuffle=False,
             pin_memory=True,
         )
 
