@@ -196,7 +196,7 @@ class TestCnn:
         print(f"{correct} / {total} correct\nAccuracy: {acc:.2f}%")
 
         os.makedirs("results", exist_ok=True)
-        with open("results/test_results.txt", "w") as out_file:
+        with open(f"{self.name}_{args.dataset}_train_results.txt", "w") as out_file:
             out_file.write(
                 f"Inference using seed: {seed} with\n{correct} / {total} correct\nAccuracy: {acc:.2f}%"
             )
