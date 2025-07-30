@@ -29,7 +29,7 @@ class EarlyStopping:
 
     def save_checkpoint(self, val_loss, model):
         print(
-            f"Validation loss decreased ({self.val_loss_best:.6f} --> {val_loss:.6f}).  Saving model."
+            f"Best validation loss decreased ({self.val_loss_best:.6f} --> {val_loss:.6f}).  Saving model."
         )
 
         if isinstance(model, nn.Module):

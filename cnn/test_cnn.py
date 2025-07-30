@@ -83,10 +83,9 @@ class TestCnn:
             dataset_class=DATASET_CLASSES[args.dataset],
         )
 
-        num_devices = torch.cuda.device_count() if torch.cuda.is_available() else 1
         self.test_loader = DataLoader(
             test_dataset,
-            batch_size=num_devices * config[self.name]["data"]["batch_size"],
+            batch_size=config[self.name]["data"]["batch_size"],
             num_workers=self.num_workers,
             shuffle=False,
             pin_memory=True,
@@ -175,7 +174,8 @@ class TestCnn:
         correct = 0
         with torch.no_grad():
             for batch in tqdm(
-                self.test_loader, desc="Testing by classifying x number of images"
+                self.test_loader,
+                desc=f"Testing by classifying {len(self.test_loader.dataset)} number of images",  # type: ignore
             ):
                 inputs = batch["image"].to(self.device)
                 labels = batch["label"].to(self.device)

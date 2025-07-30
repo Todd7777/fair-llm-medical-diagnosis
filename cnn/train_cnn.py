@@ -263,17 +263,17 @@ class TrainCnn:
 
             acc = 100 * correct / total
             print(
-                f"Epoch {epoch + 1}: Loss: {epoch_loss / len(self.train_loader):.4f} | Accuracy: {acc:.2f}%"
+                f"Epoch {epoch + 1}:\nTraining Loss: {epoch_loss / len(self.train_loader):.4f} | Training Accuracy: {acc:.2f}%"
             )
             out_file.write(
-                f"Epoch {epoch + 1}: Loss: {epoch_loss / len(self.train_loader):.4f} | Accuracy: {acc:.2f}%\n"
+                f"Epoch {epoch + 1}:\nTraining Loss: {epoch_loss / len(self.train_loader):.4f} | Training Accuracy: {acc:.2f}%\n"
             )
 
             val_loss = self.validate(out_file)
 
             self.early_stopping(val_loss, model_to_pass)
             if self.early_stopping.early_stop:
-                print(f"Early stopping triggered at epoch {epoch + 1}")
+                print(f"\nEarly stopping triggered at epoch {epoch + 1}")
                 break
 
             print(
@@ -313,8 +313,10 @@ class TrainCnn:
 
         acc = 100 * correct / total
         avg_loss = valid_loss / len(self.eval_loader)
-        print(f"Validation Accuracy: {acc:.2f}%")
-        out_file.write(f"Validation Accuracy: {acc:.2f}%\n\n")
+        print(f"Validation Loss: {avg_loss:.4f} | Validation Accuracy: {acc:.2f}%\n\n")
+        out_file.write(
+            f"Validation Loss: {avg_loss:.4f} | Validation Accuracy: {acc:.2f}%\n\n"
+        )
 
         self.model.train()
         return avg_loss
@@ -342,7 +344,6 @@ def main():
 
     trainer = TrainCnn(device_ids)
     trainer.train()
-    trainer.save_model()
 
 
 if __name__ == "__main__":
