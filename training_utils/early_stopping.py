@@ -25,20 +25,22 @@ class EarlyStopping:
                 self.early_stop = True
         else:
             self.best_score = score
-            if self.is_master:
-                self.save_checkpoint(val_loss, model)
+            self.save_checkpoint(val_loss, model)
             self.counter = 0
 
     def save_checkpoint(self, val_loss, model, final_save=False):
-        if not final_save:
-            print(
-                f"Best validation loss decreased ({self.val_loss_best:.6f} --> {val_loss:.6f}).  Saving model."
-            )
-            self.val_loss_best = val_loss
+        if self.is_master:
+            if not final_save:
+                print(
+                    f"Best validation loss decreased ({self.val_loss_best:.6f} --> {val_loss:.6f}).  Saving model."
+                )
+                self.val_loss_best = val_loss
 
-        if isinstance(model, nn.Module):
-            torch.save(model.state_dict(), self.path)
-        elif True:  # Replace True with whatever way to determine model type and therefore saving method
-            pass
-        else:
-            print("WARNING: Model type not recognized for saving. No checkpoint saved.")
+            if isinstance(model, nn.Module):
+                torch.save(model.state_dict(), self.path)
+            elif False:  # Replace True with whatever way to determine model type and therefore saving method
+                pass
+            else:
+                print(
+                    "WARNING: Model type not recognized for saving. No checkpoint saved."
+                )
