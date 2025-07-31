@@ -60,7 +60,6 @@ DATASET_CLASSES = {
 
 args = parse_args()
 config = load_config("cnn_configs.yaml")
-seed = "NOT IMPLEMENTED"
 
 
 class TestCnn:
@@ -196,9 +195,13 @@ class TestCnn:
         print(f"{correct} / {total} correct\nAccuracy: {acc:.2f}%")
 
         os.makedirs("results", exist_ok=True)
-        with open(f"{self.name}_{args.dataset}_train_results.txt", "w") as out_file:
+        with open(
+            os.path.join(
+                "results", f"{self.name}_{args.dataset}_train_results.txt", "w"
+            )
+        ) as out_file:
             out_file.write(
-                f"Inference using seed: {seed} with\n{correct} / {total} correct\nAccuracy: {acc:.2f}%"
+                f"Inference with\n{correct} / {total} correct\nAccuracy: {acc:.2f}%"
             )
 
 

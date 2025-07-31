@@ -262,7 +262,11 @@ class TrainCnnDdp:
         )
 
         os.makedirs("results", exist_ok=True)
-        out_file = open(f"{self.name}_{args.dataset}_train_results.txt", "w")
+        out_file = open(
+            os.path.join(
+                "results", f"{self.name}_{args.dataset}_train_results.txt", "w"
+            )
+        )
         out_file.write(f"Training using seed: {seed}\n")
 
         num_epochs = config[self.name]["training"]["epochs"]
