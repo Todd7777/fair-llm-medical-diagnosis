@@ -300,9 +300,6 @@ class TrainCnnDdp:
             correct = 0
             total = 0
 
-            current_lr = self.optimizer.param_groups[0]["lr"]  # type: ignore
-            print(f"Learning rate at epoch {epoch + 1}: {current_lr:.6f}")
-
             tqdm_iterator = tqdm(
                 self.train_loader,
                 desc=f"Epoch {epoch + 1}/{num_epochs}",
@@ -310,15 +307,6 @@ class TrainCnnDdp:
             )
 
             for batch_idx, batch in enumerate(tqdm_iterator):
-                inputs = batch["image"].to(self.device, non_blocking=True)
-                labels = batch["label"].to(self.device, non_blocking=True)
-
-                outputs = self.model(inputs)  # forward pass
-                loss = self.criterion(outputs, labels)
-                self.optimizer.zero_grad()  # type: ignore
-                loss.backward()
-                self.optimizer.step()  # type: ignore
-
                 if (
                     self.warmup_scheduler is not None
                     and self.warmup_steps > warmup_step_counter
@@ -329,6 +317,14 @@ class TrainCnnDdp:
                     self.cosine_scheduler.step(
                         epoch + batch_idx / self.num_batches  # type: ignore
                     )  # only if fixed batch use self.num_batches
+
+                inputs = batch["image"].to(self.device, non_blocking=True)
+                labels = batch["label"].to(self.device, non_blocking=True)
+
+                outputs = self.model(inputs)  # forward pass
+                loss = self.criterion(outputs, labels)
+                loss.backward()
+                self.optimizer.step()  # type: ignore
 
                 epoch_loss += (
                     loss.item() * self.batch_size
@@ -350,6 +346,8 @@ class TrainCnnDdp:
             accuracy = 100 * correct_tensor.item() / total_tensor.item()
 
             if self.is_master:
+                current_lr = self.optimizer.param_groups[0]["lr"]  # type: ignore
+                print(f"Learning rate after epoch {epoch + 1}: {current_lr:.6f}")
                 print(
                     f"Epoch {epoch + 1}: Loss: {avg_loss:.4f} | Accuracy: {accuracy:.2f}%"
                 )
