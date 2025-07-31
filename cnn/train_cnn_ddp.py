@@ -163,11 +163,18 @@ class TrainCnnDdp:
             pin_memory=True if self.use_cuda else False,
         )
 
+        self.num_epochs = config[self.name]["training"]["epochs"]
         self.lr = config[self.name]["training"]["lr"]
         self.criterion = nn.CrossEntropyLoss()  # If dataset is multiple diseases per image, use nn.BCEWithLogitsLoss instead of nn.CrossEntropyLoss
-        self.weight_decay = config[self.name]["training"]["weight_decay"]
+        self.weight_decay = (
+            config[self.name]["training"]["weight_decay"] if not None else 0
+        )
+        self.warmup_steps = (
+            config[self.name]["training"]["warmup_steps"] if not None else 0
+        )
         self.optimizer = None
         self.warmup_scheduler = None
+        self.cosine_scheduler = None
 
         os.makedirs(self.args.weights_dir, exist_ok=True)
         checkpoint_path = os.path.join(
@@ -201,7 +208,13 @@ class TrainCnnDdp:
             self.warmup_scheduler = torch.optim.lr_scheduler.LinearLR(
                 self.optimizer,  # type: ignore as will always be instantiated
                 start_factor=0.1,
-                total_iters=config[self.name]["training"]["warmup_steps"],
+                total_iters=self.warmup_steps,
+            )
+        if "cosine_annealing" in config[self.name]["training"]:
+            self.cosine_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+                self.optimizer,  # type: ignore
+                T_max=config[self.name]["training"]["cosine_annealing"]["T_max"],
+                eta_min=config[self.name]["training"]["cosine_annealing"]["eta_min"],
             )
 
     # all pretrained on imagenet
@@ -212,7 +225,9 @@ class TrainCnnDdp:
         in_features = model.classifier[1].in_features
         model.classifier[1] = nn.Linear(in_features, num_classes)  # type: ignore as it is a sequential, able to be indexed
 
-        self.optimizer = torch.optim.Adam(model.parameters(), lr=self.lr)
+        self.optimizer = torch.optim.Adam(
+            model.parameters(), lr=self.lr, weight_decay=self.weight_decay
+        )
         return model.to(self.device)
 
     def _build_densenet(self, num_classes):
@@ -222,7 +237,9 @@ class TrainCnnDdp:
         in_features = model.classifier.in_features
         model.classifier = nn.Linear(in_features, num_classes)
 
-        self.optimizer = torch.optim.Adam(model.parameters(), lr=self.lr)
+        self.optimizer = torch.optim.Adam(
+            model.parameters(), lr=self.lr, weight_decay=self.weight_decay
+        )
         return model.to(self.device)
 
     def _build_convnext(self, num_classes):
@@ -236,8 +253,7 @@ class TrainCnnDdp:
         model.classifier[2] = nn.Linear(in_features, num_classes)  # type: ignore as it is a sequential, able to be indexed
 
         self.optimizer = torch.optim.AdamW(
-            model.parameters(),
-            lr=self.lr,
+            model.parameters(), lr=self.lr, weight_decay=self.weight_decay
         )
         return model.to(self.device)
 
@@ -280,6 +296,14 @@ class TrainCnnDdp:
             correct = 0
             total = 0
 
+            if self.warmup_scheduler is not None and self.warmup_steps > epoch:
+                self.warmup_scheduler.step()  # type: ignore
+            elif self.warmup_scheduler is not None:
+                self.cosine_scheduler.step()  # type: ignore
+
+            current_lr = self.optimizer.param_groups[0]["lr"]  # type: ignore
+            print(f"Learning rate at epoch {epoch + 1}: {current_lr:.6f}")
+
             tqdm_iterator = tqdm(
                 self.train_loader,
                 desc=f"Epoch {epoch + 1}/{num_epochs}",
@@ -295,8 +319,6 @@ class TrainCnnDdp:
                 self.optimizer.zero_grad()  # type: ignore
                 loss.backward()
                 self.optimizer.step()  # type: ignore
-                if self.warmup_scheduler is not None:
-                    self.warmup_scheduler.step()
 
                 batch_size = labels.size(0)
                 epoch_loss += (

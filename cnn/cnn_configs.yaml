@@ -6,7 +6,10 @@ efficientnet_v2:
     lr: 0.001
     epochs: 18
     weight_decay: .0001
-    warmup_steps: 3
+    warmup_steps: 6
+    cosine_annealing:
+      T_max: 12
+      eta_min: .001
 
 densenet: # apparantly needs more epochs than efficientnet v2
   data:
@@ -16,7 +19,10 @@ densenet: # apparantly needs more epochs than efficientnet v2
     lr: 0.0005
     epochs: 30
     weight_decay: .0001
-    warmup_steps: 5
+    warmup_steps: 8
+    cosine_annealing:
+      T_max: 22
+      eta_min: .001
 
 convnext: # often uses a cosine decay schedule
   data:
@@ -26,4 +32,7 @@ convnext: # often uses a cosine decay schedule
     lr: 0.001
     epochs: 30
     weight_decay: .05
-    warmup_steps: 5
+    warmup_steps: 8
+    cosine_annealing:
+      T_max: 22
+      eta_min: .001
