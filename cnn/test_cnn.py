@@ -196,9 +196,8 @@ class TestCnn:
 
         os.makedirs("results", exist_ok=True)
         with open(
-            os.path.join(
-                "results", f"{self.name}_{args.dataset}_train_results.txt", "w"
-            )
+            os.path.join("results", f"{self.name}_{args.dataset}_train_results.txt"),
+            "w",
         ) as out_file:
             out_file.write(
                 f"Inference with\n{correct} / {total} correct\nAccuracy: {acc:.2f}%"
