@@ -6,10 +6,10 @@ efficientnet_v2:
     lr: 0.001
     epochs: 18
     weight_decay: .0001
-    warmup_steps: 6
+    warmup_steps: 256 # num warmup epochs * batch size, as its stepped per batch
     cosine_annealing:
-      T_max: 12
-      eta_min: .001
+      T_0: 14 # number of epochs it takes from max to min lr; inside batch loop lr is calculated using batch indexes
+      eta_min: .0001
 
 densenet: # apparantly needs more epochs than efficientnet v2
   data:
@@ -19,10 +19,10 @@ densenet: # apparantly needs more epochs than efficientnet v2
     lr: 0.0005
     epochs: 30
     weight_decay: .0001
-    warmup_steps: 8
+    warmup_steps: 384 # num warmup epochs * batch size, as its stepped per batch
     cosine_annealing:
-      T_max: 22
-      eta_min: .001
+      T_0: 24
+      eta_min: .00005
 
 convnext: # often uses a cosine decay schedule
   data:
@@ -32,7 +32,7 @@ convnext: # often uses a cosine decay schedule
     lr: 0.001
     epochs: 30
     weight_decay: .05
-    warmup_steps: 8
+    warmup_steps: 384 # num warmup epochs * batch size, as its stepped per batch
     cosine_annealing:
-      T_max: 22
-      eta_min: .001
+      T_0: 24
+      eta_min: .0001

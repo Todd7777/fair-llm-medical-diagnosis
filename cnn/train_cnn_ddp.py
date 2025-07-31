@@ -148,30 +148,29 @@ class TrainCnnDdp:
 
         self.num_workers = args.num_workers
 
+        self.batch_size = config[self.name]["data"]["batch_size"]
         self.train_loader = torch.utils.data.DataLoader(
             train_dataset,
-            batch_size=config[self.name]["data"]["batch_size"],
+            batch_size=self.batch_size,
             sampler=self.train_sampler,
             num_workers=self.num_workers,
             pin_memory=True if self.use_cuda else False,
         )
         self.eval_loader = torch.utils.data.DataLoader(
             eval_dataset,
-            batch_size=config[self.name]["data"]["batch_size"],
+            batch_size=self.batch_size,
             sampler=self.eval_sampler,
             num_workers=self.num_workers,
             pin_memory=True if self.use_cuda else False,
         )
-
+        self.num_batches = len(self.train_loader)
         self.num_epochs = config[self.name]["training"]["epochs"]
         self.lr = config[self.name]["training"]["lr"]
         self.criterion = nn.CrossEntropyLoss()  # If dataset is multiple diseases per image, use nn.BCEWithLogitsLoss instead of nn.CrossEntropyLoss
-        self.weight_decay = (
-            config[self.name]["training"]["weight_decay"] if not None else 0
-        )
-        self.warmup_steps = (
-            config[self.name]["training"]["warmup_steps"] if not None else 0
-        )
+
+        self.weight_decay = config[self.name]["training"].get("weight_decay", 0)
+        self.warmup_steps = config[self.name]["training"].get("warmup_steps", 0)
+
         self.optimizer = None
         self.warmup_scheduler = None
         self.cosine_scheduler = None
@@ -211,10 +210,14 @@ class TrainCnnDdp:
                 total_iters=self.warmup_steps,
             )
         if "cosine_annealing" in config[self.name]["training"]:
-            self.cosine_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-                self.optimizer,  # type: ignore
-                T_max=config[self.name]["training"]["cosine_annealing"]["T_max"],
-                eta_min=config[self.name]["training"]["cosine_annealing"]["eta_min"],
+            self.cosine_scheduler = (
+                torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(
+                    self.optimizer,  # type: ignore
+                    T_0=config[self.name]["training"]["cosine_annealing"]["T_0"],
+                    eta_min=config[self.name]["training"]["cosine_annealing"][
+                        "eta_min"
+                    ],
+                )
             )
 
     # all pretrained on imagenet
@@ -282,24 +285,20 @@ class TrainCnnDdp:
             os.path.join("results", f"{self.name}_{args.dataset}_train_results.txt"),
             "w",
         )
-        out_file.write(f"Training using seed: {seed}\n")
+
+        if self.is_master:
+            out_file.write(f"Training using seed: {seed}\n")
 
         num_epochs = config[self.name]["training"]["epochs"]
 
         self.model.train()
-
+        warmup_step_counter = 0
         for epoch in range(num_epochs):
             self.train_sampler.set_epoch(epoch)
             self.eval_sampler.set_epoch(epoch)
             epoch_loss = 0.0
             correct = 0
             total = 0
-
-            self.optimizer.step()  # type: ignore Must be done on versions after PyTorch 1.1.0
-            if self.warmup_scheduler is not None and self.warmup_steps > epoch:
-                self.warmup_scheduler.step()  # type: ignore
-            elif self.warmup_scheduler is not None:
-                self.cosine_scheduler.step()  # type: ignore
 
             current_lr = self.optimizer.param_groups[0]["lr"]  # type: ignore
             print(f"Learning rate at epoch {epoch + 1}: {current_lr:.6f}")
@@ -310,7 +309,7 @@ class TrainCnnDdp:
                 disable=not self.is_master,
             )
 
-            for batch in tqdm_iterator:
+            for batch_idx, batch in enumerate(tqdm_iterator):
                 inputs = batch["image"].to(self.device, non_blocking=True)
                 labels = batch["label"].to(self.device, non_blocking=True)
 
@@ -320,20 +319,29 @@ class TrainCnnDdp:
                 loss.backward()
                 self.optimizer.step()  # type: ignore
 
-                batch_size = labels.size(0)
+                if (
+                    self.warmup_scheduler is not None
+                    and self.warmup_steps > warmup_step_counter
+                ):
+                    self.warmup_scheduler.step()  # type: ignore
+                    warmup_step_counter += 1
+                elif self.cosine_scheduler is not None:
+                    self.cosine_scheduler.step(
+                        epoch + batch_idx / self.num_batches  # type: ignore
+                    )  # only if fixed batch use self.num_batches
+
                 epoch_loss += (
-                    loss.item() * batch_size
+                    loss.item() * self.batch_size
                 )  # sum loss weighted by batch size
                 _, preds = torch.max(outputs, 1)
-                correct += (preds == labels).sum().item()
-                total += batch_size
+                correct += (preds == labels).sum()
+                total += self.batch_size
 
-            # Convert to tensors for distributed reduction
             loss_tensor = torch.tensor(epoch_loss, device=self.device)
             correct_tensor = torch.tensor(correct, device=self.device)
             total_tensor = torch.tensor(total, device=self.device)
 
-            # Sum across all GPUs/processes
+            # Sum across all processes
             dist.all_reduce(loss_tensor, op=dist.ReduceOp.SUM)
             dist.all_reduce(correct_tensor, op=dist.ReduceOp.SUM)
             dist.all_reduce(total_tensor, op=dist.ReduceOp.SUM)
@@ -396,11 +404,10 @@ class TrainCnnDdp:
 
                 loss = self.criterion(outputs, labels)
 
-                batch_size = labels.size(0)
-                valid_loss_sum += loss.item() * batch_size
+                valid_loss_sum += loss * self.batch_size
                 _, preds = torch.max(outputs, 1)
                 correct += (preds == labels).sum()
-                total += batch_size
+                total += self.batch_size
 
         dist.all_reduce(valid_loss_sum, op=dist.ReduceOp.SUM)
         dist.all_reduce(correct, op=dist.ReduceOp.SUM)
@@ -417,12 +424,13 @@ class TrainCnnDdp:
         return avg_loss
 
 
-def main_worker(rank, world_size, args):
+def main_worker(rank, world_size, args, available_gpus):
     set_seed(seed + rank)
 
     use_cuda = torch.cuda.is_available() and args.total_gpus is not None
     if use_cuda:
-        torch.cuda.set_device(rank)
+        gpu_id = available_gpus[rank]
+        torch.cuda.set_device(gpu_id)
 
     dist.init_process_group(
         backend="nccl" if use_cuda else "gloo",
@@ -462,6 +470,7 @@ def main():
         args=(world_size, args),
         nprocs=world_size,
         join=True,
+        available_gpus=available_gpus,  # type: ignore
     )
 
 

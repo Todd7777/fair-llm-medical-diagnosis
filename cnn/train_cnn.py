@@ -116,9 +116,11 @@ class TrainCnn:
             },
             dataset_class=DATASET_CLASSES[args.dataset],
         )
+
+        self.batch_size = config[self.name]["data"]["batch_size"]
         self.train_loader = DataLoader(
             train_dataset,
-            batch_size=config[self.name]["data"]["batch_size"],
+            batch_size=self.batch_size,
             num_workers=self.num_workers,
             shuffle=True,
             pin_memory=True,
@@ -134,21 +136,19 @@ class TrainCnn:
         )
         self.eval_loader = DataLoader(
             eval_dataset,
-            batch_size=config[self.name]["data"]["batch_size"],
+            batch_size=self.batch_size,
             num_workers=self.num_workers,
             shuffle=False,
             pin_memory=True,
         )
 
+        self.num_batches = len(self.train_loader)
         self.num_epochs = config[self.name]["training"]["epochs"]
         self.lr = config[self.name]["training"]["lr"]
         self.criterion = nn.CrossEntropyLoss()  # If dataset is multiple diseases per image, use nn.BCEWithLogitsLoss instead of nn.CrossEntropyLoss
-        self.weight_decay = (
-            config[self.name]["training"]["weight_decay"] if not None else 0
-        )
-        self.warmup_steps = (
-            config[self.name]["training"]["warmup_steps"] if not None else 0
-        )
+
+        self.weight_decay = config[self.name]["training"].get("weight_decay", 0)
+        self.warmup_steps = config[self.name]["training"].get("warmup_steps", 0)
 
         self.optimizer = None
         self.warmup_scheduler = None
@@ -185,10 +185,14 @@ class TrainCnn:
                 total_iters=config[self.name]["training"]["warmup_steps"],
             )
         if "cosine_annealing" in config[self.name]["training"]:
-            self.cosine_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-                self.optimizer,  # type: ignore
-                T_max=config[self.name]["training"]["cosine_annealing"]["T_max"],
-                eta_min=config[self.name]["training"]["cosine_annealing"]["eta_min"],
+            self.cosine_scheduler = (
+                torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(
+                    self.optimizer,  # type: ignore
+                    T_0=config[self.name]["training"]["cosine_annealing"]["T_0"],
+                    eta_min=config[self.name]["training"]["cosine_annealing"][
+                        "eta_min"
+                    ],
+                )
             )
 
     # all pretrained on imagenet
@@ -252,22 +256,17 @@ class TrainCnn:
         out_file.write(f"Training using seed: {seed}\n")
 
         self.model.train()
+        warmup_step_counter = 0
         for epoch in range(self.num_epochs):
             epoch_loss = 0.0
             correct = 0
             total = 0
 
-            self.optimizer.step()  # type: ignore Must be done on versions after PyTorch 1.1.0
-            if self.warmup_scheduler is not None and self.warmup_steps > epoch:
-                self.warmup_scheduler.step()  # type: ignore
-            elif self.warmup_scheduler is not None:
-                self.cosine_scheduler.step()  # type: ignore
-
             current_lr = self.optimizer.param_groups[0]["lr"]  # type: ignore
             print(f"Learning rate at epoch {epoch + 1}: {current_lr:.6f}")
 
-            for batch in tqdm(
-                self.train_loader, desc=f"Epoch {epoch + 1}/{self.num_epochs}"
+            for batch_idx, batch in enumerate(
+                tqdm(self.train_loader, desc=f"Epoch {epoch + 1}/{self.num_epochs}")
             ):
                 inputs = batch["image"].to(self.device, non_blocking=True)
                 labels = batch["label"].to(self.device, non_blocking=True)
@@ -277,6 +276,17 @@ class TrainCnn:
                 self.optimizer.zero_grad()  # type: ignore as optimizer is instantiated
                 loss.backward()
                 self.optimizer.step()  # type: ignore
+
+                if (
+                    self.warmup_scheduler is not None
+                    and self.warmup_steps > warmup_step_counter
+                ):
+                    self.warmup_scheduler.step()  # type: ignore
+                    warmup_step_counter += 1
+                elif self.cosine_scheduler is not None:
+                    self.cosine_scheduler.step(
+                        epoch + batch_idx / self.num_batches  # type: ignore
+                    )  # only if fixed batch use self.num_batches
 
                 epoch_loss += loss.item()
                 _, preds = torch.max(
@@ -332,7 +342,7 @@ class TrainCnn:
 
                 valid_loss += loss.item()
                 _, preds = torch.max(outputs, 1)
-                correct += (preds == labels).sum().item()
+                correct += (preds == labels).sum().to(self.device)
                 total += labels.size(0)
 
         acc = 100 * correct / total
