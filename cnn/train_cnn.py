@@ -257,6 +257,7 @@ class TrainCnn:
             correct = 0
             total = 0
 
+            self.optimizer.step()  # type: ignore Must be done on versions after PyTorch 1.1.0
             if self.warmup_scheduler is not None and self.warmup_steps > epoch:
                 self.warmup_scheduler.step()  # type: ignore
             elif self.warmup_scheduler is not None:
