@@ -307,6 +307,16 @@ class TrainCnnDdp:
             )
 
             for batch_idx, batch in enumerate(tqdm_iterator):
+
+                inputs = batch["image"].to(self.device, non_blocking=True).contiguous()
+                labels = batch["label"].to(self.device, non_blocking=True).contiguous()
+
+                outputs = self.model(inputs)  # forward pass
+               
+                loss = self.criterion(outputs, labels)
+                loss.backward()
+                self.optimizer.step()  # type: ignore
+                
                 if (
                     self.warmup_scheduler is not None
                     and self.warmup_steps > warmup_step_counter
@@ -318,14 +328,11 @@ class TrainCnnDdp:
                         epoch + batch_idx / self.num_batches  # type: ignore
                     )  # only if fixed batch use self.num_batches
 
-                inputs = batch["image"].to(self.device, non_blocking=True)
-                labels = batch["label"].to(self.device, non_blocking=True)
-
-                outputs = self.model(inputs)  # forward pass
-                loss = self.criterion(outputs, labels)
-                loss.backward()
-                self.optimizer.step()  # type: ignore
-
+                current_lr = self.optimizer.param_groups[0]["lr"]  # type: ignore
+                print(f"Learning rate after batch {batch_idx + 1}: {current_lr:.6f}")
+                
+                self.optimizer.zero_grad() # type: ignore as optimizer is instantiated
+                
                 epoch_loss += (
                     loss.item() * self.batch_size
                 )  # sum loss weighted by batch size
@@ -395,8 +402,8 @@ class TrainCnnDdp:
 
         with torch.no_grad():
             for batch in self.eval_loader:
-                inputs = batch["image"].to(self.device, non_blocking=True)
-                labels = batch["label"].to(self.device, non_blocking=True)
+                inputs = batch["image"].to(self.device, non_blocking=True).contiguous()
+                labels = batch["label"].to(self.device, non_blocking=True).contiguous()
 
                 outputs = self.model(inputs)
 
@@ -460,17 +467,19 @@ def main():
 
     world_size = len(available_gpus)
     os.environ["MASTER_ADDR"] = "localhost"
-    os.environ["MASTER_PORT"] = "12355"
+    os.environ["MASTER_PORT"] = "12356"
 
-    # one process per GPU
-    mp.spawn(  # type: ignore
+
+    mp.spawn(
         main_worker,
-        args=(world_size, args),
+        args=(world_size, args, available_gpus),  # pass available_gpus inside args tuple
         nprocs=world_size,
         join=True,
-        available_gpus=available_gpus,  # type: ignore
     )
 
 
+
 if __name__ == "__main__":
+    import torch.multiprocessing as mp
+    mp.set_start_method('spawn', force=True)
     main()

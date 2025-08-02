@@ -265,6 +265,18 @@ class TrainCnn:
             for batch_idx, batch in enumerate(
                 tqdm(self.train_loader, desc=f"Epoch {epoch + 1}/{self.num_epochs}")
             ):
+                
+                inputs = batch["image"].to(self.device, non_blocking=True)
+                labels = batch["label"].to(self.device, non_blocking=True)
+
+                outputs = self.model(inputs)  # forward pass
+                
+                loss = self.criterion(outputs, labels)
+                loss.backward()
+                self.optimizer.step()  # type: ignore
+
+
+                print(f"Loading batch: {batch_idx}")
                 if (
                     self.warmup_scheduler is not None
                     and self.warmup_steps > warmup_step_counter
@@ -276,15 +288,11 @@ class TrainCnn:
                         epoch + batch_idx / self.num_batches  # type: ignore
                     )  # only if fixed batch use self.num_batches
 
-                inputs = batch["image"].to(self.device, non_blocking=True)
-                labels = batch["label"].to(self.device, non_blocking=True)
-
-                outputs = self.model(inputs)  # forward pass
-                loss = self.criterion(outputs, labels)
+                current_lr = self.optimizer.param_groups[0]["lr"]  # type: ignore
+                print(f"Learning rate after batch {batch_idx + 1}: {current_lr:.6f}")
+                
                 self.optimizer.zero_grad()  # type: ignore as optimizer is instantiated
-                loss.backward()
-                self.optimizer.step()  # type: ignore
-
+                
                 epoch_loss += loss.item()
                 _, preds = torch.max(
                     outputs, 1
@@ -293,8 +301,6 @@ class TrainCnn:
                 total += labels.size(0)
 
             acc = 100 * correct / total
-            current_lr = self.optimizer.param_groups[0]["lr"]  # type: ignore
-            print(f"Learning rate after epoch {epoch + 1}: {current_lr:.6f}")
             print(
                 f"Epoch {epoch + 1}:\nTraining Loss: {epoch_loss / len(self.train_loader):.4f} | Training Accuracy: {acc:.2f}%"
             )
@@ -362,3 +368,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
