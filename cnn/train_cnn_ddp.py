@@ -15,6 +15,7 @@ from torch.utils.data.distributed import DistributedSampler
 from torch.nn.parallel import DistributedDataParallel as DDP
 import torch.distributed as dist
 
+import signal
 import sys
 
 sys.path.append("..")
@@ -29,6 +30,13 @@ sys.path.remove("..")
 
 import random
 import numpy as np
+
+
+def signal_handler(sig, frame):
+    dist.destroy_process_group()
+    print("Interrupt received, stopping training safely")
+    # Put any cleanup code here if needed, e.g. save model state
+    sys.exit(0)
 
 
 def set_seed(seed):
@@ -307,16 +315,15 @@ class TrainCnnDdp:
             )
 
             for batch_idx, batch in enumerate(tqdm_iterator):
-
                 inputs = batch["image"].to(self.device, non_blocking=True).contiguous()
                 labels = batch["label"].to(self.device, non_blocking=True).contiguous()
 
                 outputs = self.model(inputs)  # forward pass
-               
+
                 loss = self.criterion(outputs, labels)
                 loss.backward()
                 self.optimizer.step()  # type: ignore
-                
+
                 if (
                     self.warmup_scheduler is not None
                     and self.warmup_steps > warmup_step_counter
@@ -330,9 +337,9 @@ class TrainCnnDdp:
 
                 current_lr = self.optimizer.param_groups[0]["lr"]  # type: ignore
                 print(f"Learning rate after batch {batch_idx + 1}: {current_lr:.6f}")
-                
-                self.optimizer.zero_grad() # type: ignore as optimizer is instantiated
-                
+
+                self.optimizer.zero_grad()  # type: ignore as optimizer is instantiated
+
                 epoch_loss += (
                     loss.item() * self.batch_size
                 )  # sum loss weighted by batch size
@@ -372,6 +379,7 @@ class TrainCnnDdp:
                 stop_flag += 1
 
             dist.all_reduce(stop_flag, op=dist.ReduceOp.SUM)
+            dist.barrier()
 
             if stop_flag.item() > 0:
                 print(f"Process rank {dist.get_rank()} stopping early.")
@@ -393,6 +401,7 @@ class TrainCnnDdp:
             self.early_stopping.save_checkpoint(
                 self.early_stopping.val_loss_best, model_to_pass, final_save=True
             )
+            dist.barrier()
 
     def validate(self, out_file):
         self.model.eval()
@@ -430,6 +439,8 @@ class TrainCnnDdp:
 
 
 def main_worker(rank, world_size, args, available_gpus):
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
     set_seed(seed + rank)
 
     use_cuda = torch.cuda.is_available() and args.total_gpus is not None
@@ -443,12 +454,14 @@ def main_worker(rank, world_size, args, available_gpus):
         world_size=world_size,
         rank=rank,
     )
-
-    trainer = TrainCnnDdp(rank, world_size, use_cuda, args)
-    trainer.train()
-    trainer.save_model(rank)
-
-    dist.destroy_process_group()
+    try:
+        trainer = TrainCnnDdp(rank, world_size, use_cuda, args)
+        trainer.train()
+        trainer.save_model(rank)
+    finally:
+        dist.barrier()
+        dist.destroy_process_group()
+        torch.cuda.empty_cache()
 
 
 def main():
@@ -469,17 +482,20 @@ def main():
     os.environ["MASTER_ADDR"] = "localhost"
     os.environ["MASTER_PORT"] = "12356"
 
-
-    mp.spawn(
+    mp.spawn(  # type: ignore
         main_worker,
-        args=(world_size, args, available_gpus),  # pass available_gpus inside args tuple
+        args=(
+            world_size,
+            args,
+            available_gpus,
+        ),  # pass available_gpus inside args tuple
         nprocs=world_size,
         join=True,
     )
 
 
-
 if __name__ == "__main__":
     import torch.multiprocessing as mp
-    mp.set_start_method('spawn', force=True)
+
+    mp.set_start_method("spawn", force=True)
     main()

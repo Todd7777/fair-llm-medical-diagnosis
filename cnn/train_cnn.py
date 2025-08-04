@@ -10,6 +10,7 @@ import os
 import yaml
 import argparse
 import sys
+import signal
 
 sys.path.append("..")
 import training_utils.early_stopping as early_stopping
@@ -364,8 +365,14 @@ class TrainCnn:
 
 
 def main():
-    trainer = TrainCnn()
-    trainer.train()
+    try:
+        trainer = TrainCnn()
+        trainer.train()
+    except KeyboardInterrupt:
+        print("Training interrupted.")
+    finally:
+        torch.cuda.empty_cache()
+        print("Cleanup done, exiting.")
 
 
 if __name__ == "__main__":
