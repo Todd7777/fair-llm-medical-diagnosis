@@ -3,6 +3,7 @@ import pandas as pd
 from PIL import Image
 import os
 from torch.utils.data import Dataset
+import numpy as np
 
 # Separated dataset wrappers for the distinct ordering of image and meta data
 
@@ -10,16 +11,22 @@ from torch.utils.data import Dataset
 # chexpert is already in a dataframe format
 # data_dir in this context is the base directory of Chexpert, as Path contains the rest
 class ChestXRayDataset(Dataset):
-    def __init__(
-        self, dataset_type, data_dir, metadata_dir, transform=None, split=None, **kwargs
-    ):
-        self.metadata = pd.read_csv(metadata_dir)
-        if split:
-            self.metadata = self.metadata[self.metadata["split"] == split]
-
+    def __init__(self, dataset_type, data_dir, metadata_dir, transform=None, **kwargs):
         self.data_dir = data_dir
         self.transform = transform
-        self.split = split
+
+        if dataset_type == "train":
+            self.metadata_file = "train.csv"
+            self.split = None
+        elif dataset_type == "eval":
+            self.metadata_file = "valid_and_test.csv"
+            self.split = "eval"
+        elif dataset_type == "test":
+            self.metadata_file = "valid_and_test.csv"
+            self.split = "test"
+        else:
+            raise Exception('dataset types: "train", "eval", "test"')
+
         self.label_cols = [
             "No Finding",
             "Enlarged Cardiomediastinum",
@@ -36,6 +43,25 @@ class ChestXRayDataset(Dataset):
             "Fracture",
             "Support Devices",
         ]
+
+        metadata_path = os.path.join(metadata_dir, self.metadata_file)
+        if os.path.exists(metadata_path):
+            self.metadata = pd.read_csv(metadata_path)
+            print("csv exists")
+        else:
+            print("csv does not exist, creating")
+            create_new_file(
+                metadata_dir,
+                self.metadata_file,
+                self.label_cols + ["split"],
+                ".csv",
+                "_and_test.csv",
+                {"eval": 0.5, "test": 0.5},
+            )
+            self.metadata = pd.read_csv(metadata_path)
+
+        if self.split:
+            self.metadata = self.metadata[self.metadata["split"] == self.split]
 
     def __len__(self):
         return len(self.metadata)
@@ -76,9 +102,7 @@ class PathologyImageDataset(Dataset):
 
 # Subject to change based on how the retinal dataset's data is layed out
 class RetinalImageDataset(Dataset):
-    def __init__(
-        self, dataset_type, data_dir, metadata_dir, transform, split=None, **kwargs
-    ):
+    def __init__(self, dataset_type, data_dir, metadata_dir, transform, **kwargs):
         super().__init__()
         self.data_dir = data_dir
         self.transform = transform
@@ -94,13 +118,20 @@ class RetinalImageDataset(Dataset):
         else:
             raise Exception('dataset types: "train", "eval", "test"')
 
-        if os.path.exists(os.path.join(metadata_dir, self.metadata_file)):
-            self.metadata = pd.read_csv(os.path.join(metadata_dir, self.metadata_file))
+        metadata_path = os.path.join(metadata_dir, self.metadata_file)
+        if os.path.exists(metadata_path):
+            self.metadata = pd.read_csv(metadata_path)
             print("csv exists")
         else:
             print("csv does not exist, creating")
-            convert_to_csv(metadata_dir, self.metadata_file, ".txt")
-            self.metadata = pd.read_csv(os.path.join(metadata_dir, self.metadata_file))
+            create_new_file(
+                metadata_dir,
+                self.metadata_file,
+                ["Img_File_Name", "Label"],
+                ".txt",
+                ".csv",
+            )
+            self.metadata = pd.read_csv(metadata_path)
 
     def __len__(self):
         return len(self.metadata)
@@ -125,16 +156,29 @@ class RetinalImageDataset(Dataset):
         return len(self.metadata["Label"].unique())
 
 
-def convert_to_csv(metadata_dir, metadata_csv_file, file_type):
+def create_new_file(
+    metadata_dir, metadata_csv_file, names, file_type, replace_with, split_ratios=None
+):
     txt_file = pd.read_csv(
         filepath_or_buffer=os.path.join(
-            metadata_dir, metadata_csv_file.replace(".csv", file_type)
+            metadata_dir, metadata_csv_file.replace(replace_with, file_type)
         ),
         sep=" ",
         engine="python",
         header=None,
-        names=["Img_File_Name", "Label"],
+        names=names,
     )
+
+    if split_ratios is None:
+        pass
+    else:
+        # Ex: split_ratios = {'train': 0.8, 'eval': 0.1, 'test': 0.1}
+        splits = list(split_ratios.keys())
+        probs = list(split_ratios.values())
+
+        np.random.seed(42)
+        txt_file["split"] = np.random.choice(splits, size=len(txt_file), p=probs)
+
     txt_file.to_csv(os.path.join(metadata_dir, metadata_csv_file), index=False)
 
 
