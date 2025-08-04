@@ -81,6 +81,10 @@ def parse_args():
 
 args = parse_args()
 
+if args.gpu is not None:
+    torch.cuda.set_device(int(args.gpu))
+elif torch.cuda.is_available():
+    torch.cuda.set_device(0)
 
 config = load_config("cnn_configs.yaml")
 
@@ -265,16 +269,14 @@ class TrainCnn:
             for batch_idx, batch in enumerate(
                 tqdm(self.train_loader, desc=f"Epoch {epoch + 1}/{self.num_epochs}")
             ):
-                
                 inputs = batch["image"].to(self.device, non_blocking=True)
                 labels = batch["label"].to(self.device, non_blocking=True)
 
                 outputs = self.model(inputs)  # forward pass
-                
+
                 loss = self.criterion(outputs, labels)
                 loss.backward()
                 self.optimizer.step()  # type: ignore
-
 
                 print(f"Loading batch: {batch_idx}")
                 if (
@@ -290,9 +292,9 @@ class TrainCnn:
 
                 current_lr = self.optimizer.param_groups[0]["lr"]  # type: ignore
                 print(f"Learning rate after batch {batch_idx + 1}: {current_lr:.6f}")
-                
+
                 self.optimizer.zero_grad()  # type: ignore as optimizer is instantiated
-                
+
                 epoch_loss += loss.item()
                 _, preds = torch.max(
                     outputs, 1
@@ -368,4 +370,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
