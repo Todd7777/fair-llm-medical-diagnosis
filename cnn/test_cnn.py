@@ -205,8 +205,14 @@ class TestCnn:
 
 
 def main():
-    tester = TestCnn()
-    tester.test()
+    try:
+        tester = TestCnn()
+        tester.test()
+    except KeyboardInterrupt:
+        print("Testing interrupted.")
+    finally:
+        torch.cuda.empty_cache()
+        print("Cleanup done, exiting.")
 
 
 if __name__ == "__main__":
