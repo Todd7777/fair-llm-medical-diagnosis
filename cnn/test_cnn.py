@@ -4,7 +4,6 @@ import torch
 import torchvision.models as models
 from torch.utils.data import DataLoader
 import torch.nn as nn
-import cnn_dataset_maker
 import yaml
 from tqdm import tqdm
 import argparse
@@ -17,6 +16,7 @@ from data.makedatasets.datasets import (
     ChestXRayDataset,
     PathologyImageDataset,
 )
+from data.makedatasets import dataset_maker
 
 sys.path.remove("..")
 
@@ -72,7 +72,7 @@ class TestCnn:
         self.lr = config[self.name]["training"]["lr"]
         self.num_workers = args.num_workers
 
-        test_dataset = cnn_dataset_maker.make_cnn_dataset(
+        test_dataset = dataset_maker.make_cnn_dataset(
             data_args={
                 "dataset_type": "test",
                 "data_dir": args.data_dir,

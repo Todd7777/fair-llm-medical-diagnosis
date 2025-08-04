@@ -4,13 +4,11 @@ import torch
 import torch.nn as nn
 import torchvision.models as models
 from torch.utils.data import DataLoader
-import cnn_dataset_maker
 from tqdm import tqdm
 import os
 import yaml
 import argparse
 import sys
-import signal
 
 sys.path.append("..")
 import training_utils.early_stopping as early_stopping
@@ -19,6 +17,7 @@ from data.makedatasets.datasets import (
     ChestXRayDataset,
     PathologyImageDataset,
 )
+from data.makedatasets import dataset_maker
 
 sys.path.remove("..")
 
@@ -112,7 +111,7 @@ class TrainCnn:
             )
 
         self.num_workers = args.num_workers
-        train_dataset = cnn_dataset_maker.make_cnn_dataset(
+        train_dataset = dataset_maker.make_cnn_dataset(
             data_args={
                 "dataset_type": "train",
                 "data_dir": args.data_dir,
@@ -130,7 +129,7 @@ class TrainCnn:
             shuffle=True,
             pin_memory=True,
         )
-        eval_dataset = cnn_dataset_maker.make_cnn_dataset(
+        eval_dataset = dataset_maker.make_cnn_dataset(
             data_args={
                 "dataset_type": "eval",
                 "data_dir": args.data_dir,

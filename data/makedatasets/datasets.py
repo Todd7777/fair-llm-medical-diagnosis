@@ -8,24 +8,20 @@ from torch.utils.data import Dataset
 
 
 # chexpert is already in a dataframe format
+# data_dir in this context is the base directory of Chexpert, as Path contains the rest
 class ChestXRayDataset(Dataset):
     def __init__(
-        self,
-        data_dir,
-        metadata_path,
-        transform=None,
-        split=None,
-        demographic_key="Sex",
-        label_cols=None,
+        self, dataset_type, data_dir, metadata_dir, transform=None, split=None, **kwargs
     ):
-        self.metadata = pd.read_csv(metadata_path)
+        self.metadata = pd.read_csv(metadata_dir)
         if split:
             self.metadata = self.metadata[self.metadata["split"] == split]
+
         self.data_dir = data_dir
         self.transform = transform
         self.split = split
-        self.demographic_key = demographic_key
-        self.label_cols = label_cols or [
+        self.label_cols = [
+            "No Finding",
             "Enlarged Cardiomediastinum",
             "Cardiomegaly",
             "Lung Opacity",
@@ -39,7 +35,6 @@ class ChestXRayDataset(Dataset):
             "Pleural Other",
             "Fracture",
             "Support Devices",
-            "No Finding",
         ]
 
     def __len__(self):
@@ -47,24 +42,19 @@ class ChestXRayDataset(Dataset):
 
     def __getitem__(self, idx):
         row = self.metadata.iloc[idx]
-        img_path = os.path.join(self.data_dir, row["Path"])
-        image = Image.open(img_path).convert("RGB")
-
+        img_file_path = os.path.join(self.data_dir, row["Path"])
+        image = Image.open(img_file_path)
         if self.transform:
             image = self.transform(image)
-
         label = row[self.label_cols].astype(float).values
-        demographic = row.get(self.demographic_key, "unknown")
 
         return {
             "image": image,
             "label": label,
-            "demographic": demographic,
-            "path": row["Path"],
         }
 
     def get_num_classes(self):
-        pass
+        return len(self.label_cols)
 
 
 class PathologyImageDataset(Dataset):
@@ -86,7 +76,9 @@ class PathologyImageDataset(Dataset):
 
 # Subject to change based on how the retinal dataset's data is layed out
 class RetinalImageDataset(Dataset):
-    def __init__(self, dataset_type, data_dir, metadata_dir, transform, **kwargs):
+    def __init__(
+        self, dataset_type, data_dir, metadata_dir, transform, split=None, **kwargs
+    ):
         super().__init__()
         self.data_dir = data_dir
         self.transform = transform

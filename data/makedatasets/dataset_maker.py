@@ -50,11 +50,15 @@ def make_cnn_dataset(data_args, dataset_class):
 
     return dataset
 
-    """
-    return 
-    datasets.create_data_loader(
-        dataset,
-        batch_size=batch_size,
-        shuffle=(data_args["dataset_type"] == "train"),
-        num_workers=4,
-    )"""
+
+def make_vlm_dataset(data_args, dataset_class):
+    transform = None
+
+    data_args = dict(data_args)  # doesn't edit orig
+
+    data_args["transform"] = transform
+
+    dataset = dataset_class(**data_args)
+
+    pass
+    # return dataset
