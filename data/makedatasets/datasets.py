@@ -6,14 +6,14 @@ from torch.utils.data import Dataset
 import numpy as np
 
 # Separated dataset wrappers for the distinct ordering of image and meta data
+# transform is expected to be provided using dataset_maker. If None, no transform is applied.
 
 
 # chexpert is already in a dataframe format
 # data_dir in this context is the base directory of Chexpert, as Path contains the rest
 class ChestXRayDataset(Dataset):
-    def __init__(self, dataset_type, data_dir, metadata_dir, transform=None, **kwargs):
+    def __init__(self, dataset_type, data_dir, metadata_dir, **kwargs):
         self.data_dir = data_dir
-        self.transform = transform
 
         if dataset_type == "train":
             self.metadata_file = "train.csv"
@@ -61,7 +61,9 @@ class ChestXRayDataset(Dataset):
             self.metadata = pd.read_csv(metadata_path)
 
         if self.split:
-            self.metadata = self.metadata[self.metadata["split"] == self.split]
+            self.metadata = self.metadata[
+                self.metadata["split"] == self.split
+            ].reset_index(drop=True)
 
     def __len__(self):
         return len(self.metadata)
@@ -69,9 +71,7 @@ class ChestXRayDataset(Dataset):
     def __getitem__(self, idx):
         row = self.metadata.iloc[idx]
         img_file_path = os.path.join(self.data_dir, row["Path"])
-        image = Image.open(img_file_path)
-        if self.transform:
-            image = self.transform(image)
+        image = Image.open(img_file_path).convert("RGB")
         label = row[self.label_cols].astype(float).values
 
         return {
@@ -83,29 +83,79 @@ class ChestXRayDataset(Dataset):
         return len(self.label_cols)
 
 
+# data_dir in this context is the base directory of breakhis, as filename contains the rest
 class PathologyImageDataset(Dataset):
-    def __init__(self, data_dir, metadata_dir, transform, **kwargs):
-        super().__init__()
+    def __init__(self, dataset_type, data_dir, metadata_dir, **kwargs):
         self.data_dir = data_dir
-        self.metadata_dir = metadata_dir
-        self.transform = transform
+
+        self.metadata_file = "Folds.csv"
+        if dataset_type == "train":
+            self.split = "train"
+        elif dataset_type == "eval":
+            self.split = "eval"
+        elif dataset_type == "test":
+            self.split = "test"
+        else:
+            raise Exception('dataset types: "train", "eval", "test"')
+
+        metadata_path = os.path.join(metadata_dir, self.metadata_file)
+        self.metadata = pd.read_csv(metadata_path)
+
+        if self.split:
+            self.metadata = self.metadata[
+                self.metadata["grp"] == self.split
+            ].reset_index(drop=True)
+
+        self.labels = [
+            "benign_adenosis",
+            "malignant_adenosis",
+            "benign_fibroadenoma",
+            "malignant_fibroadenoma",
+            "benign_phyllodes_tumor",
+            "malignant_phyllodes_tumor",
+            "benign_tubular_adenoma",
+            "malignant_tubular_adenoma",
+            "benign_ductal_carcinoma",
+            "malignant_ductal_carcinoma",
+            "benign_lobular_carcinoma",
+            "malignant_lobular_carcinoma",
+            "benign_mucinous_carcinoma",
+            "malignant_mucinous_carcinoma",
+            "benign_papillary_carcinoma",
+            "malignant_papillary_carcinoma",
+        ]
 
     def __len__(self):
-        pass
+        return len(self.metadata)
 
     def __getitem__(self, idx):
-        pass
+        row = self.metadata.iloc[idx]
+        img_file_path = os.path.join(self.data_dir, row["Path"])
+        image = Image.open(img_file_path).convert("RGB")
+
+        path_list = row["filename"].split(os.sep)
+
+        breast_idx = path_list.index("breast")
+        sob_idx = path_list.index("SOB")
+        benign_or_malignant = path_list[breast_idx + 1]
+        class_name = f"{benign_or_malignant}_{path_list[sob_idx + 1]}"
+
+        label = self.labels.index(class_name)
+        return {
+            "image": image,
+            "label": label,
+        }
 
     def get_num_classes(self):
-        pass
+        return len(self.labels)
 
 
 # Subject to change based on how the retinal dataset's data is layed out
 class RetinalImageDataset(Dataset):
-    def __init__(self, dataset_type, data_dir, metadata_dir, transform, **kwargs):
+    def __init__(self, dataset_type, data_dir, metadata_dir, **kwargs):
         super().__init__()
         self.data_dir = data_dir
-        self.transform = transform
+
         if dataset_type == "train":
             self.img_data_last_dir = "train"
             self.metadata_file = "train.csv"
@@ -142,9 +192,7 @@ class RetinalImageDataset(Dataset):
         img_file_path = os.path.join(
             self.data_dir, self.img_data_last_dir, row["Img_File_Name"]
         )
-        image = Image.open(img_file_path)
-        if self.transform:
-            image = self.transform(image)  # PIL image
+        image = Image.open(img_file_path).convert("RGB")
         label = row["Label"]
 
         return {
