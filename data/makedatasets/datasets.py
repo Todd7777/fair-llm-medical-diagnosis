@@ -12,8 +12,9 @@ import numpy as np
 # chexpert is already in a dataframe format
 # data_dir in this context is the base directory of Chexpert, as Path contains the rest
 class ChestXRayDataset(Dataset):
-    def __init__(self, dataset_type, data_dir, metadata_dir, **kwargs):
+    def __init__(self, dataset_type, data_dir, metadata_dir, transform, **kwargs):
         self.data_dir = data_dir
+        self.transform = transform
 
         if dataset_type == "train":
             self.metadata_file = "train.csv"
@@ -72,6 +73,8 @@ class ChestXRayDataset(Dataset):
         row = self.metadata.iloc[idx]
         img_file_path = os.path.join(self.data_dir, row["Path"])
         image = Image.open(img_file_path).convert("RGB")
+        if self.transform:
+            image = self.transform(image)
         label = row[self.label_cols].astype(float).values
 
         return {
@@ -85,8 +88,9 @@ class ChestXRayDataset(Dataset):
 
 # data_dir in this context is the base directory of breakhis, as filename contains the rest
 class PathologyImageDataset(Dataset):
-    def __init__(self, dataset_type, data_dir, metadata_dir, **kwargs):
+    def __init__(self, dataset_type, data_dir, metadata_dir, transform, **kwargs):
         self.data_dir = data_dir
+        self.transform = transform
 
         self.metadata_file = "Folds.csv"
         if dataset_type == "train":
@@ -132,6 +136,8 @@ class PathologyImageDataset(Dataset):
         row = self.metadata.iloc[idx]
         img_file_path = os.path.join(self.data_dir, row["Path"])
         image = Image.open(img_file_path).convert("RGB")
+        if self.transform:
+            image = self.transform(image)
 
         path_list = row["filename"].split(os.sep)
 
@@ -152,9 +158,10 @@ class PathologyImageDataset(Dataset):
 
 # Subject to change based on how the retinal dataset's data is layed out
 class RetinalImageDataset(Dataset):
-    def __init__(self, dataset_type, data_dir, metadata_dir, **kwargs):
+    def __init__(self, dataset_type, data_dir, metadata_dir, transform, **kwargs):
         super().__init__()
         self.data_dir = data_dir
+        self.transform = transform
 
         if dataset_type == "train":
             self.img_data_last_dir = "train"
@@ -193,6 +200,9 @@ class RetinalImageDataset(Dataset):
             self.data_dir, self.img_data_last_dir, row["Img_File_Name"]
         )
         image = Image.open(img_file_path).convert("RGB")
+        if self.transform:
+            image = self.transform(image)
+
         label = row["Label"]
 
         return {
