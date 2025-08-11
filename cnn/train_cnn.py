@@ -183,10 +183,9 @@ class TrainCnn:
             raise Exception("wrong model name")
 
         if "warmup_steps" in config[self.name]["training"]:
-            self.warmup_scheduler = torch.optim.lr_scheduler.LinearLR(
+            self.warmup_scheduler = torch.optim.lr_scheduler.LambdaLR(
                 self.optimizer,  # type: ignore as will always be instantiated
-                start_factor=0.1,
-                total_iters=config[self.name]["training"]["warmup_steps"],
+                self.lr_lambda,
             )
         if "cosine_annealing" in config[self.name]["training"]:
             self.cosine_scheduler = (
@@ -198,6 +197,14 @@ class TrainCnn:
                     ],
                 )
             )
+
+    def lr_lambda(self, current_step):
+        if current_step < self.warmup_steps:
+            # Compute a multiplier that starts at start_lr/base_lr (0.1) and goes up to 1.0
+            return 0.1 + (1.0 - 0.1) * (current_step / self.warmup_steps)
+        else:
+            # After warmup, keep multiplier at 1.0 (base LR)
+            return 1.0
 
     # all pretrained on imagenet
     def _build_efficientnet_v2(self, num_classes):
@@ -283,7 +290,7 @@ class TrainCnn:
                     self.warmup_scheduler is not None
                     and self.warmup_steps > warmup_step_counter
                 ):
-                    self.warmup_scheduler.step()  # type: ignore
+                    self.warmup_scheduler.step()
                     warmup_step_counter += 1
                 elif self.cosine_scheduler is not None:
                     self.cosine_scheduler.step(
