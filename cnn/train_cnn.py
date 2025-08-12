@@ -152,10 +152,8 @@ class TrainCnn:
         self.criterion = nn.CrossEntropyLoss()  # If dataset is multiple diseases per image, use nn.BCEWithLogitsLoss instead of nn.CrossEntropyLoss
 
         self.weight_decay = config[self.name]["training"].get("weight_decay", 0)
-        self.warmup_steps = self.num_batches * config[self.name]["training"].get(
-            "warmup_epochs", 0
-        )
-
+        self.warmup_epochs = config[self.name]["training"].get("warmup_epochs", 0)
+        self.warmup_steps = self.num_batches * self.warmup_epochs
         self.optimizer = None
         self.warmup_scheduler = None
         self.cosine_scheduler = None
@@ -296,7 +294,7 @@ class TrainCnn:
                     warmup_step_counter += 1
                 elif self.cosine_scheduler is not None:
                     self.cosine_scheduler.step(
-                        epoch + batch_idx / self.num_batches  # type: ignore
+                        epoch - self.warmup_epochs + batch_idx / self.num_batches  # type: ignore
                     )  # only if fixed batch use self.num_batches
 
                 current_lr = self.optimizer.param_groups[0]["lr"]  # type: ignore
