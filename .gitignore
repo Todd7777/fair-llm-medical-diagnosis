@@ -1,3 +1,7 @@
+# Logs
+*.out
+
+
 # Python
 __pycache__/
 *.py[cod]
@@ -20,6 +24,7 @@ wheels/
 .installed.cfg
 *.egg
 .python-version
+clear_mem.py
 
 # Training and testing result
 cnn/results/

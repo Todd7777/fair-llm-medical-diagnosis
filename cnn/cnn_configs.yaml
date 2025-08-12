@@ -31,7 +31,7 @@ convnext: # often uses a cosine decay schedule
   training:
     lr: 0.001
     epochs: 30
-    weight_decay: .05
+    weight_decay: .01
     warmup_epochs: 3 # num warmup epochs, stepped per batch
     cosine_annealing:
       T_0: 27
