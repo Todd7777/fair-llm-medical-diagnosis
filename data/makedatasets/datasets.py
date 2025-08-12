@@ -96,7 +96,7 @@ class PathologyImageDataset(Dataset):
         if dataset_type == "train":
             self.split = "train"
         elif dataset_type == "eval":
-            self.split = "eval"
+            self.split = "test"  # Eval and test share the same dataset for now
         elif dataset_type == "test":
             self.split = "test"
         else:
