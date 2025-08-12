@@ -110,7 +110,7 @@ class TrainCnn:
                 else torch.device("cpu")
             )
 
-        self.dataset_class = (DATASET_CLASSES[args.dataset],)
+        self.dataset_class = DATASET_CLASSES[args.dataset]
 
         self.num_workers = args.num_workers
         train_dataset = dataset_maker.make_cnn_dataset(
