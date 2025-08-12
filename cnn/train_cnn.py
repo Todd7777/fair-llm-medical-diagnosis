@@ -166,7 +166,7 @@ class TrainCnn:
 
         os.makedirs(args.weights_dir, exist_ok=True)
         checkpoint_path = os.path.join(
-            args.weights_dir, f"{self.name}_{args.dataset}_fine_tuned_best.pt"
+            args.weights_dir, f"{self.name}_{self.dataset_name}_fine_tuned_best.pt"
         )
 
         num_classes = self.train_loader.dataset.get_num_classes()  # type: ignore as all the datasets have get_num_classes
@@ -257,7 +257,7 @@ class TrainCnn:
     def save_model(self):
         os.makedirs(args.weights_dir, exist_ok=True)
         path = os.path.join(
-            args.weights_dir, f"{self.name}_{args.dataset}_fine_tuned.pt"
+            args.weights_dir, f"{self.name}_{self.dataset_name}_fine_tuned.pt"
         )
         torch.save(self.model.state_dict(), path)
         print(f"Model saved to {path}")
@@ -269,7 +269,9 @@ class TrainCnn:
 
         os.makedirs("results", exist_ok=True)
         out_file = open(
-            os.path.join("results", f"{self.name}_{args.dataset}_train_results.txt"),
+            os.path.join(
+                "results", f"{self.name}_{self.dataset_name}_train_results.txt"
+            ),
             "w",
         )
         out_file.write(f"Training using seed: {seed}\n")

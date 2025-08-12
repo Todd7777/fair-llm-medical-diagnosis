@@ -125,7 +125,7 @@ class TestCnn:
                 torch.load(
                     os.path.join(
                         args.weights_dir,
-                        f"{self.name}_{args.dataset}_fine_tuned_best.pt",
+                        f"{self.name}_{self.dataset_name}_fine_tuned_best.pt",
                     ),
                     map_location=self.device,
                 )
@@ -148,7 +148,7 @@ class TestCnn:
                 torch.load(
                     os.path.join(
                         args.weights_dir,
-                        f"{self.name}_{args.dataset}_fine_tuned_best.pt",
+                        f"{self.name}_{self.dataset_name}_fine_tuned_best.pt",
                     ),
                     map_location=self.device,
                 )
@@ -171,7 +171,7 @@ class TestCnn:
                 torch.load(
                     os.path.join(
                         args.weights_dir,
-                        f"{self.name}_{args.dataset}_fine_tuned_best.pt",
+                        f"{self.name}_{self.dataset_name}_fine_tuned_best.pt",
                     ),
                     map_location=self.device,
                 )
@@ -208,7 +208,9 @@ class TestCnn:
 
         os.makedirs("results", exist_ok=True)
         with open(
-            os.path.join("results", f"{self.name}_{args.dataset}_train_results.txt"),
+            os.path.join(
+                "results", f"{self.name}_{self.dataset_name}_train_results.txt"
+            ),
             "w",
         ) as out_file:
             out_file.write(
