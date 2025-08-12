@@ -152,7 +152,9 @@ class TrainCnn:
         self.criterion = nn.CrossEntropyLoss()  # If dataset is multiple diseases per image, use nn.BCEWithLogitsLoss instead of nn.CrossEntropyLoss
 
         self.weight_decay = config[self.name]["training"].get("weight_decay", 0)
-        self.warmup_steps = config[self.name]["training"].get("warmup_steps", 0)
+        self.warmup_steps = self.num_batches * config[self.name]["training"].get(
+            "warmup_epochs", 0
+        )
 
         self.optimizer = None
         self.warmup_scheduler = None
@@ -182,7 +184,7 @@ class TrainCnn:
         else:
             raise Exception("wrong model name")
 
-        if "warmup_steps" in config[self.name]["training"]:
+        if "warmup_epochs" in config[self.name]["training"]:
             self.warmup_scheduler = torch.optim.lr_scheduler.LambdaLR(
                 self.optimizer,  # type: ignore as will always be instantiated
                 self.lr_lambda,
