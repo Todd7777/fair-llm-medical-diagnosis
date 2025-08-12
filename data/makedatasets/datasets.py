@@ -107,34 +107,34 @@ class PathologyImageDataset(Dataset):
 
         if self.split:
             self.metadata = self.metadata[
-                self.metadata["grp"] == self.split
-            ].reset_index(drop=True)
+                    self.metadata["grp"] == self.split
+                    ].reset_index(drop=True)
 
         self.labels = [
-            "benign_adenosis",
-            "malignant_adenosis",
-            "benign_fibroadenoma",
-            "malignant_fibroadenoma",
-            "benign_phyllodes_tumor",
-            "malignant_phyllodes_tumor",
-            "benign_tubular_adenoma",
-            "malignant_tubular_adenoma",
-            "benign_ductal_carcinoma",
-            "malignant_ductal_carcinoma",
-            "benign_lobular_carcinoma",
-            "malignant_lobular_carcinoma",
-            "benign_mucinous_carcinoma",
-            "malignant_mucinous_carcinoma",
-            "benign_papillary_carcinoma",
-            "malignant_papillary_carcinoma",
-        ]
+                "benign_adenosis",
+                "malignant_adenosis",
+                "benign_fibroadenoma",
+                "malignant_fibroadenoma",
+                "benign_phyllodes_tumor",
+                "malignant_phyllodes_tumor",
+                "benign_tubular_adenoma",
+                "malignant_tubular_adenoma",
+                "benign_ductal_carcinoma",
+                "malignant_ductal_carcinoma",
+                "benign_lobular_carcinoma",
+                "malignant_lobular_carcinoma",
+                "benign_mucinous_carcinoma",
+                "malignant_mucinous_carcinoma",
+                "benign_papillary_carcinoma",
+                "malignant_papillary_carcinoma",
+                ]
 
     def __len__(self):
         return len(self.metadata)
 
     def __getitem__(self, idx):
         row = self.metadata.iloc[idx]
-        img_file_path = os.path.join(self.data_dir, row["Path"])
+        img_file_path = os.path.join(self.data_dir, row["filename"])
         image = Image.open(img_file_path).convert("RGB")
         if self.transform:
             image = self.transform(image)

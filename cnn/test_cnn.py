@@ -48,6 +48,11 @@ def parse_args():
         type=int,
         help="Should be less than or equal to the number of cores",
     )
+    parser.add_argument(
+        "--gpu",
+        required=False,
+        help="Choose the gpu to use. Ex. 0",
+    )
     return parser.parse_args()
 
 
@@ -59,6 +64,12 @@ DATASET_CLASSES = {
 
 
 args = parse_args()
+
+if args.gpu is not None:
+    torch.cuda.set_device(int(args.gpu))
+elif torch.cuda.is_available():
+    torch.cuda.set_device(0)
+
 config = load_config("cnn_configs.yaml")
 
 
