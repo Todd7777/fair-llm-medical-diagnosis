@@ -124,6 +124,7 @@ class TrainCnnDdp:
         self.use_cuda = use_cuda
         self.name = self.args.model_name
         self.device = torch.device(f"cuda:{process_rank}" if self.use_cuda else "cpu")
+        self.dataset_class = DATASET_CLASSES[self.args.dataset]
 
         if self.is_master:
             print("Using main device:", self.device)
@@ -135,7 +136,7 @@ class TrainCnnDdp:
                 "metadata_dir": self.args.metadata_dir,
                 "model_name": self.name,
             },
-            dataset_class=DATASET_CLASSES[self.args.dataset],
+            dataset_class=self.dataset_class,
         )
         eval_dataset = cnn_dataset_maker.make_cnn_dataset(
             data_args={
@@ -144,7 +145,7 @@ class TrainCnnDdp:
                 "metadata_dir": self.args.metadata_dir,
                 "model_name": self.name,
             },
-            dataset_class=DATASET_CLASSES[self.args.dataset],
+            dataset_class=self.dataset_class,
         )
 
         self.train_sampler = DistributedSampler(
@@ -156,7 +157,7 @@ class TrainCnnDdp:
 
         self.num_workers = args.num_workers
 
-        self.batch_size = config[self.name]["data"]["batch_size"]
+        self.batch_size = config[self.name][self.dataset_class]["data"]["batch_size"]
         self.train_loader = torch.utils.data.DataLoader(
             train_dataset,
             batch_size=self.batch_size,
@@ -172,12 +173,16 @@ class TrainCnnDdp:
             pin_memory=True if self.use_cuda else False,
         )
         self.num_batches = len(self.train_loader)
-        self.num_epochs = config[self.name]["training"]["epochs"]
-        self.lr = config[self.name]["training"]["lr"]
+        self.num_epochs = config[self.name][self.dataset_class]["training"]["epochs"]
+        self.lr = config[self.name][self.dataset_class]["training"]["lr"]
         self.criterion = nn.CrossEntropyLoss()  # If dataset is multiple diseases per image, use nn.BCEWithLogitsLoss instead of nn.CrossEntropyLoss
 
-        self.weight_decay = config[self.name]["training"].get("weight_decay", 0)
-        self.warmup_steps = config[self.name]["training"].get("warmup_steps", 0)
+        self.weight_decay = config[self.name][self.dataset_class]["training"].get(
+            "weight_decay", 0
+        )
+        self.warmup_steps = config[self.name][self.dataset_class]["training"].get(
+            "warmup_steps", 0
+        )
 
         self.optimizer = None
         self.warmup_scheduler = None
@@ -211,20 +216,22 @@ class TrainCnnDdp:
         else:
             self.model = DDP(self.model)  # no device_ids for CPU
 
-        if "warmup_steps" in config[self.name]["training"]:
+        if "warmup_steps" in config[self.name][self.dataset_class]["training"]:
             self.warmup_scheduler = torch.optim.lr_scheduler.LinearLR(
                 self.optimizer,  # type: ignore as will always be instantiated
                 start_factor=0.1,
                 total_iters=self.warmup_steps,
             )
-        if "cosine_annealing" in config[self.name]["training"]:
+        if "cosine_annealing" in config[self.name][self.dataset_class]["training"]:
             self.cosine_scheduler = (
                 torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(
                     self.optimizer,  # type: ignore
-                    T_0=config[self.name]["training"]["cosine_annealing"]["T_0"],
-                    eta_min=config[self.name]["training"]["cosine_annealing"][
-                        "eta_min"
-                    ],
+                    T_0=config[self.name][self.dataset_class]["training"][
+                        "cosine_annealing"
+                    ]["T_0"],
+                    eta_min=config[self.name][self.dataset_class]["training"][
+                        "cosine_annealing"
+                    ]["eta_min"],
                 )
             )
 
@@ -297,7 +304,7 @@ class TrainCnnDdp:
         if self.is_master:
             out_file.write(f"Training using seed: {seed}\n")
 
-        num_epochs = config[self.name]["training"]["epochs"]
+        num_epochs = config[self.name][self.dataset_class]["training"]["epochs"]
 
         self.model.train()
         warmup_step_counter = 0

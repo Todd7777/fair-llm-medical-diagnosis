@@ -110,6 +110,8 @@ class TrainCnn:
                 else torch.device("cpu")
             )
 
+        self.dataset_class = (DATASET_CLASSES[args.dataset],)
+
         self.num_workers = args.num_workers
         train_dataset = dataset_maker.make_cnn_dataset(
             data_args={
@@ -118,10 +120,10 @@ class TrainCnn:
                 "metadata_dir": args.metadata_dir,
                 "model_name": self.name,
             },
-            dataset_class=DATASET_CLASSES[args.dataset],
+            dataset_class=self.dataset_class,
         )
 
-        self.batch_size = config[self.name]["data"]["batch_size"]
+        self.batch_size = config[self.name][self.dataset_class]["data"]["batch_size"]
         self.train_loader = DataLoader(
             train_dataset,
             batch_size=self.batch_size,
@@ -136,7 +138,7 @@ class TrainCnn:
                 "metadata_dir": args.metadata_dir,
                 "model_name": self.name,
             },
-            dataset_class=DATASET_CLASSES[args.dataset],
+            dataset_class=self.dataset_class,
         )
         self.eval_loader = DataLoader(
             eval_dataset,
@@ -147,12 +149,16 @@ class TrainCnn:
         )
 
         self.num_batches = len(self.train_loader)
-        self.num_epochs = config[self.name]["training"]["epochs"]
-        self.lr = config[self.name]["training"]["lr"]
+        self.num_epochs = config[self.name][self.dataset_class]["training"]["epochs"]
+        self.lr = config[self.name][self.dataset_class]["training"]["lr"]
         self.criterion = nn.CrossEntropyLoss()  # If dataset is multiple diseases per image, use nn.BCEWithLogitsLoss instead of nn.CrossEntropyLoss
 
-        self.weight_decay = config[self.name]["training"].get("weight_decay", 0)
-        self.warmup_epochs = config[self.name]["training"].get("warmup_epochs", 0)
+        self.weight_decay = config[self.name][self.dataset_class]["training"].get(
+            "weight_decay", 0
+        )
+        self.warmup_epochs = config[self.name][self.dataset_class]["training"].get(
+            "warmup_epochs", 0
+        )
         self.warmup_steps = self.num_batches * self.warmup_epochs
         self.optimizer = None
         self.warmup_scheduler = None
@@ -182,19 +188,21 @@ class TrainCnn:
         else:
             raise Exception("wrong model name")
 
-        if "warmup_epochs" in config[self.name]["training"]:
+        if "warmup_epochs" in config[self.name][self.dataset_class]["training"]:
             self.warmup_scheduler = torch.optim.lr_scheduler.LambdaLR(
                 self.optimizer,  # type: ignore as will always be instantiated
                 self.lr_lambda,
             )
-        if "cosine_annealing" in config[self.name]["training"]:
+        if "cosine_annealing" in config[self.name][self.dataset_class]["training"]:
             self.cosine_scheduler = (
                 torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(
                     self.optimizer,  # type: ignore
-                    T_0=config[self.name]["training"]["cosine_annealing"]["T_0"],
-                    eta_min=config[self.name]["training"]["cosine_annealing"][
-                        "eta_min"
-                    ],
+                    T_0=config[self.name][self.dataset_class]["training"][
+                        "cosine_annealing"
+                    ]["T_0"],
+                    eta_min=config[self.name][self.dataset_class]["training"][
+                        "cosine_annealing"
+                    ]["eta_min"],
                 )
             )
 

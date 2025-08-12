@@ -80,7 +80,8 @@ class TestCnn:
         self.name = args.model_name
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         print("Using device:", self.device)
-        self.lr = config[self.name]["training"]["lr"]
+        self.dataset_class = DATASET_CLASSES[args.dataset]
+        self.lr = config[self.name][self.dataset_class]["training"]["lr"]
         self.num_workers = args.num_workers
 
         test_dataset = dataset_maker.make_cnn_dataset(
@@ -90,12 +91,12 @@ class TestCnn:
                 "metadata_dir": args.metadata_dir,
                 "model_name": self.name,
             },
-            dataset_class=DATASET_CLASSES[args.dataset],
+            dataset_class=self.dataset_class,
         )
 
         self.test_loader = DataLoader(
             test_dataset,
-            batch_size=config[self.name]["data"]["batch_size"],
+            batch_size=config[self.name][self.dataset_class]["data"]["batch_size"],
             num_workers=self.num_workers,
             shuffle=False,
             pin_memory=True,
