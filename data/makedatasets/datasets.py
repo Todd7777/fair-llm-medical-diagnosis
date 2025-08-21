@@ -1,9 +1,11 @@
-from torch.utils.data import DataLoader
 import pandas as pd
 from PIL import Image
 import os
+from torch.utils.data import DataLoader
 from torch.utils.data import Dataset
 import numpy as np
+import csv
+import torch
 
 # Separated dataset wrappers for the distinct ordering of image and meta data
 # transform is expected to be provided using dataset_maker. If None, no transform is applied.
@@ -11,19 +13,23 @@ import numpy as np
 
 # chexpert is already in a dataframe format
 # data_dir in this context is the base directory of Chexpert, as Path contains the rest
+# for multi label classification, get_num_classes() technically gets num labels
 class ChestXRayDataset(Dataset):
     def __init__(self, dataset_type, data_dir, metadata_dir, transform, **kwargs):
         self.data_dir = data_dir
         self.transform = transform
+        self.classification_type = "multi_label"
 
         if dataset_type == "train":
             self.metadata_file = "train.csv"
             self.split = None
         elif dataset_type == "eval":
             self.metadata_file = "valid_and_test.csv"
+            self.metadata_file_orig = "valid.csv"
             self.split = "eval"
         elif dataset_type == "test":
             self.metadata_file = "valid_and_test.csv"
+            self.metadata_file_orig = "valid.csv"
             self.split = "test"
         else:
             raise Exception('dataset types: "train", "eval", "test"')
@@ -53,11 +59,9 @@ class ChestXRayDataset(Dataset):
             print("csv does not exist, creating")
             create_new_file(
                 metadata_dir,
-                self.metadata_file,
-                self.label_cols + ["split"],
-                ".csv",
-                "_and_test.csv",
-                {"eval": 0.5, "test": 0.5},
+                input_file_name="valid.csv",
+                output_file_name="valid_and_test.csv",
+                split_ratios={"eval": 0.5, "test": 0.5},
             )
             self.metadata = pd.read_csv(metadata_path)
 
@@ -77,6 +81,10 @@ class ChestXRayDataset(Dataset):
             image = self.transform(image)
         label = row[self.label_cols].astype(float).values
 
+        label = np.nan_to_num(label, nan=0.0)
+        label[label == -1.0] = 0.0
+        label = torch.tensor(label, dtype=torch.float32)
+
         return {
             "image": image,
             "label": label,
@@ -85,12 +93,15 @@ class ChestXRayDataset(Dataset):
     def get_num_classes(self):
         return len(self.label_cols)
 
+    def get_classification_type(self):
+        return self.classification_type
 
 # data_dir in this context is the base directory of breakhis, as filename contains the rest
 class PathologyImageDataset(Dataset):
     def __init__(self, dataset_type, data_dir, metadata_dir, transform, **kwargs):
         self.data_dir = data_dir
         self.transform = transform
+        self.classification_type = "multi_class"
 
         self.metadata_file = "Folds.csv"
         if dataset_type == "train":
@@ -112,20 +123,12 @@ class PathologyImageDataset(Dataset):
 
         self.labels = [
                 "benign_adenosis",
-                "malignant_adenosis",
                 "benign_fibroadenoma",
-                "malignant_fibroadenoma",
                 "benign_phyllodes_tumor",
-                "malignant_phyllodes_tumor",
                 "benign_tubular_adenoma",
-                "malignant_tubular_adenoma",
-                "benign_ductal_carcinoma",
                 "malignant_ductal_carcinoma",
-                "benign_lobular_carcinoma",
                 "malignant_lobular_carcinoma",
-                "benign_mucinous_carcinoma",
                 "malignant_mucinous_carcinoma",
-                "benign_papillary_carcinoma",
                 "malignant_papillary_carcinoma",
                 ]
 
@@ -147,6 +150,7 @@ class PathologyImageDataset(Dataset):
         class_name = f"{benign_or_malignant}_{path_list[sob_idx + 1]}"
 
         label = self.labels.index(class_name)
+        
         return {
             "image": image,
             "label": label,
@@ -155,6 +159,8 @@ class PathologyImageDataset(Dataset):
     def get_num_classes(self):
         return len(self.labels)
 
+    def get_classification_type(self):
+        return self.classification_type
 
 # Subject to change based on how the retinal dataset's data is layed out
 class RetinalImageDataset(Dataset):
@@ -162,6 +168,7 @@ class RetinalImageDataset(Dataset):
         super().__init__()
         self.data_dir = data_dir
         self.transform = transform
+        self.classification_type = "multi_class"
 
         if dataset_type == "train":
             self.img_data_last_dir = "train"
@@ -183,11 +190,11 @@ class RetinalImageDataset(Dataset):
             print("csv does not exist, creating")
             create_new_file(
                 metadata_dir,
-                self.metadata_file,
-                ["Img_File_Name", "Label"],
-                ".txt",
-                ".csv",
+                input_file_name=self.metadata_file[0, -4] + ".txt",
+                output_file_name=self.metadata_file,
+                names=["Img_File_Name", "Label"],
             )
+
             self.metadata = pd.read_csv(metadata_path)
 
     def __len__(self):
@@ -212,32 +219,47 @@ class RetinalImageDataset(Dataset):
 
     def get_num_classes(self):
         return len(self.metadata["Label"].unique())
-
+    
+    def get_classification_type(self):
+        return self.classification_type
 
 def create_new_file(
-    metadata_dir, metadata_csv_file, names, file_type, replace_with, split_ratios=None
+    metadata_dir,
+    input_file_name,
+    output_file_name,
+    names=None,
+    header=None,
+    split_ratios=None,
 ):
-    txt_file = pd.read_csv(
-        filepath_or_buffer=os.path.join(
-            metadata_dir, metadata_csv_file.replace(replace_with, file_type)
-        ),
-        sep=" ",
-        engine="python",
-        header=None,
-        names=names,
-    )
-
-    if split_ratios is None:
-        pass
+    input_path = os.path.join(metadata_dir, input_file_name)
+    
+    if header is not None:
+        data_frame = pd.read_csv(
+            input_path,
+            header=header,
+            quoting=csv.QUOTE_MINIMAL,
+            quotechar='"',
+            names=names,
+            engine="python"
+        )
     else:
-        # Ex: split_ratios = {'train': 0.8, 'eval': 0.1, 'test': 0.1}
+        data_frame = pd.read_csv(
+            input_path,
+            quoting=csv.QUOTE_MINIMAL,
+            quotechar='"',
+            names=names,
+            engine="python"
+        )
+
+    if split_ratios is not None:
         splits = list(split_ratios.keys())
         probs = list(split_ratios.values())
-
         np.random.seed(42)
-        txt_file["split"] = np.random.choice(splits, size=len(txt_file), p=probs)
+        split_column = np.random.choice(splits, size=len(data_frame), p=probs)
+        data_frame["split"] = split_column
 
-    txt_file.to_csv(os.path.join(metadata_dir, metadata_csv_file), index=False)
+    output_path = os.path.join(metadata_dir, output_file_name)
+    data_frame.to_csv(output_path, index=False)
 
 
 def create_data_loader(dataset, batch_size, num_workers, shuffle):

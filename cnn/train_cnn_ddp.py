@@ -132,6 +132,8 @@ class TrainCnnDdp:
         train_dataset = cnn_dataset_maker.make_cnn_dataset(
             data_args={
                 "dataset_type": "train",
+                "model_name": self.name,
+                "dataset_name": self.dataset_name,
                 "data_dir": self.args.data_dir,
                 "metadata_dir": self.args.metadata_dir,
                 "model_name": self.name,
@@ -141,6 +143,8 @@ class TrainCnnDdp:
         eval_dataset = cnn_dataset_maker.make_cnn_dataset(
             data_args={
                 "dataset_type": "eval",
+                "model_name": self.name,
+                "dataset_name": self.dataset_name,
                 "data_dir": self.args.data_dir,
                 "metadata_dir": self.args.metadata_dir,
                 "model_name": self.name,
@@ -172,10 +176,19 @@ class TrainCnnDdp:
             num_workers=self.num_workers,
             pin_memory=True if self.use_cuda else False,
         )
+
+        self.classification_type = eval_dataset.get_classification_type()
+
         self.num_batches = len(self.train_loader)
         self.num_epochs = config[self.name][self.dataset_name]["training"]["epochs"]
         self.lr = config[self.name][self.dataset_name]["training"]["lr"]
-        self.criterion = nn.CrossEntropyLoss()  # If dataset is multiple diseases per image, use nn.BCEWithLogitsLoss instead of nn.CrossEntropyLoss
+        
+        if config[self.name][self.dataset_name]["training"]["criterion"] == "cross_entropy":
+            self.criterion = nn.CrossEntropyLoss()
+        elif config[self.name][self.dataset_name]["training"]["criterion"] == "bce_with_logits":
+            self.criterion = nn.BCEWithLogitsLoss()
+        else:
+            raise Exception("Must provide criterion in cnn configs")
 
         self.weight_decay = config[self.name][self.dataset_name]["training"].get(
             "weight_decay", 0
@@ -192,19 +205,19 @@ class TrainCnnDdp:
         checkpoint_path = os.path.join(
             self.args.weights_dir, f"{self.name}_{self.dataset_name}_fine_tuned_best.pt"
         )
-        num_classes = self.train_loader.dataset.get_num_classes()  # type: ignore as all the datasets have get_num_classes
+        self.num_classes = self.train_loader.dataset.get_num_classes()  # type: ignore as all the datasets have get_num_classes
         if self.name == "efficientnet_v2":
-            self.model = self._build_efficientnet_v2(num_classes)
+            self.model = self._build_efficientnet_v2()
             self.early_stopping = early_stopping.EarlyStopping(
                 patience=4, path=checkpoint_path, is_master=self.is_master
             )
         elif self.name == "densenet":
-            self.model = self._build_densenet(num_classes)
+            self.model = self._build_densenet()
             self.early_stopping = early_stopping.EarlyStopping(
                 patience=6, path=checkpoint_path, is_master=self.is_master
             )
         elif self.name == "convnext":
-            self.model = self._build_convnext(num_classes)
+            self.model = self._build_convnext()
             self.early_stopping = early_stopping.EarlyStopping(
                 patience=6, path=checkpoint_path, is_master=self.is_master
             )
@@ -236,31 +249,31 @@ class TrainCnnDdp:
             )
 
     # all pretrained on imagenet
-    def _build_efficientnet_v2(self, num_classes):
+    def _build_efficientnet_v2(self):
         model = models.efficientnet_v2_m(  # s, m, l
             weights="DEFAULT"
         )
         in_features = model.classifier[1].in_features
-        model.classifier[1] = nn.Linear(in_features, num_classes)  # type: ignore as it is a sequential, able to be indexed
+        model.classifier[1] = nn.Linear(in_features, self.num_classes)  # type: ignore as it is a sequential, able to be indexed
 
         self.optimizer = torch.optim.Adam(
             model.parameters(), lr=self.lr, weight_decay=self.weight_decay
         )
         return model.to(self.device)
 
-    def _build_densenet(self, num_classes):
+    def _build_densenet(self):
         model = models.densenet121(
             weights="DEFAULT"
         )  # may want to find a cnn not trained on imagenet
         in_features = model.classifier.in_features
-        model.classifier = nn.Linear(in_features, num_classes)
+        model.classifier = nn.Linear(in_features, self.num_classes)
 
         self.optimizer = torch.optim.Adam(
             model.parameters(), lr=self.lr, weight_decay=self.weight_decay
         )
         return model.to(self.device)
 
-    def _build_convnext(self, num_classes):
+    def _build_convnext(self):
         model = models.convnext_tiny(
             weights="DEFAULT"
         )  # convnext v2 exists not in pytorch, different sizes of that up to "huge" ~660 mil
@@ -268,7 +281,7 @@ class TrainCnnDdp:
         in_features = (
             model.classifier[2].in_features
         )  # ConvNeXt classifier has a sequential with layers; layer 2 is Linear
-        model.classifier[2] = nn.Linear(in_features, num_classes)  # type: ignore as it is a sequential, able to be indexed
+        model.classifier[2] = nn.Linear(in_features, self.num_classes)  # type: ignore as it is a sequential, able to be indexed
 
         self.optimizer = torch.optim.AdamW(
             model.parameters(), lr=self.lr, weight_decay=self.weight_decay
@@ -330,6 +343,7 @@ class TrainCnnDdp:
                 outputs = self.model(inputs)  # forward pass
 
                 loss = self.criterion(outputs, labels)
+                self.optimizer.zero_grad()  # type: ignore as optimizer is instantiated
                 loss.backward()
                 self.optimizer.step()  # type: ignore
 
@@ -345,16 +359,30 @@ class TrainCnnDdp:
                     )  # only if fixed batch use self.num_batches
 
                 current_lr = self.optimizer.param_groups[0]["lr"]  # type: ignore
-                print(f"Learning rate after batch {batch_idx + 1}: {current_lr:.6f}")
+                if self.is_master:
+                    print(f"Learning rate after batch {batch_idx + 1}: {current_lr:.6f}")
+                
+                current_batch_size = inputs.size(0)
+                epoch_loss += loss.item() * current_batch_size # sum loss weighted by batch size
 
-                self.optimizer.zero_grad()  # type: ignore as optimizer is instantiated
 
-                epoch_loss += (
-                    loss.item() * self.batch_size
-                )  # sum loss weighted by batch size
-                _, preds = torch.max(outputs, 1)
+                if self.classification_type == "binary":
+                    probs = torch.sigmoid(outputs)
+                    preds = (probs > 0.5).long()
+                    total += labels.size(0)
+                elif self.classification_type == "multi_class":
+                    _, preds = torch.max(outputs, 1)
+                    total += labels.size(0)
+                elif self.classification_type == "multi_label":
+                    probs = torch.sigmoid(outputs)
+                    preds = (probs > 0.5).float()
+                    total += labels.numel()
+                else:
+                    raise Exception("Not a type of classification")
+                
+                preds = preds.to(self.device)
+
                 correct += (preds == labels).sum()
-                total += self.batch_size
 
             loss_tensor = torch.tensor(epoch_loss, device=self.device)
             correct_tensor = torch.tensor(correct, device=self.device)
@@ -427,10 +455,26 @@ class TrainCnnDdp:
 
                 loss = self.criterion(outputs, labels)
 
-                valid_loss_sum += loss * self.batch_size
-                _, preds = torch.max(outputs, 1)
+                current_batch_size = inputs.size(0)
+                valid_loss_sum  += loss * current_batch_size
+
+                if self.classification_type == "binary":
+                    probs = torch.sigmoid(outputs)
+                    preds = (probs > 0.5).long()
+                    total += labels.size(0)
+                elif self.classification_type == "multi_class":
+                    _, preds = torch.max(outputs, 1)
+                    total += labels.size(0)
+                elif self.classification_type == "multi_label":
+                    probs = torch.sigmoid(outputs)
+                    preds = (probs > 0.5).float()
+                    total += labels.numel()
+                else:
+                    raise Exception("Not a type of classification")
+                
+                preds = preds.to(self.device)
+    
                 correct += (preds == labels).sum()
-                total += self.batch_size
 
         dist.all_reduce(valid_loss_sum, op=dist.ReduceOp.SUM)
         dist.all_reduce(correct, op=dist.ReduceOp.SUM)
