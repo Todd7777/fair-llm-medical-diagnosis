@@ -10,6 +10,10 @@ import yaml
 import argparse
 import sys
 
+from torchmetrics.classification import (
+    Accuracy
+    )
+
 sys.path.append("..")
 import training_utils.early_stopping as early_stopping
 from data.makedatasets.datasets import (
@@ -39,7 +43,7 @@ def set_seed(seed):
     torch.backends.cudnn.benchmark = False
 
 
-seed = 42
+seed = 43
 set_seed(seed)
 
 
@@ -116,6 +120,8 @@ class TrainCnn:
         train_dataset = dataset_maker.make_cnn_dataset(
             data_args={
                 "dataset_type": "train",
+                "model_name": self.name,
+                "dataset_name": self.dataset_name,
                 "data_dir": args.data_dir,
                 "metadata_dir": args.metadata_dir,
                 "model_name": self.name,
@@ -134,6 +140,8 @@ class TrainCnn:
         eval_dataset = dataset_maker.make_cnn_dataset(
             data_args={
                 "dataset_type": "eval",
+                "model_name": self.name,
+                "dataset_name": self.dataset_name,
                 "data_dir": args.data_dir,
                 "metadata_dir": args.metadata_dir,
                 "model_name": self.name,
@@ -148,10 +156,19 @@ class TrainCnn:
             pin_memory=True,
         )
 
+        self.num_classes = self.train_loader.dataset.get_num_classes()  # type: ignore as all the datasets have get_num_classes
+        self.classification_type = eval_dataset.get_classification_type()
+
         self.num_batches = len(self.train_loader)
         self.num_epochs = config[self.name][self.dataset_name]["training"]["epochs"]
         self.lr = config[self.name][self.dataset_name]["training"]["lr"]
-        self.criterion = nn.CrossEntropyLoss()  # If dataset is multiple diseases per image, use nn.BCEWithLogitsLoss instead of nn.CrossEntropyLoss
+        
+        if config[self.name][self.dataset_name]["training"]["criterion"] == "cross_entropy":
+            self.criterion = nn.CrossEntropyLoss()
+        elif config[self.name][self.dataset_name]["training"]["criterion"] == "bce_with_logits":
+            self.criterion = nn.BCEWithLogitsLoss()
+        else:
+            raise Exception("Must provide criterion in cnn configs")
 
         self.weight_decay = config[self.name][self.dataset_name]["training"].get(
             "weight_decay", 0
@@ -169,21 +186,20 @@ class TrainCnn:
             args.weights_dir, f"{self.name}_{self.dataset_name}_fine_tuned_best.pt"
         )
 
-        num_classes = self.train_loader.dataset.get_num_classes()  # type: ignore as all the datasets have get_num_classes
         if self.name == "efficientnet_v2":
-            self.model = self._build_efficientnet_v2(num_classes)
+            self.model = self._build_efficientnet_v2()
             self.early_stopping = early_stopping.EarlyStopping(
-                patience=4, path=checkpoint_path
+                patience=6, path=checkpoint_path
             )
         elif self.name == "densenet":
-            self.model = self._build_densenet(num_classes)
+            self.model = self._build_densenet()
             self.early_stopping = early_stopping.EarlyStopping(
-                patience=6, path=checkpoint_path
+                patience=10, path=checkpoint_path
             )
         elif self.name == "convnext":
-            self.model = self._build_convnext(num_classes)
+            self.model = self._build_convnext()
             self.early_stopping = early_stopping.EarlyStopping(
-                patience=6, path=checkpoint_path
+                patience=10, path=checkpoint_path
             )
         else:
             raise Exception("wrong model name")
@@ -215,31 +231,31 @@ class TrainCnn:
             return 1.0
 
     # all pretrained on imagenet
-    def _build_efficientnet_v2(self, num_classes):
+    def _build_efficientnet_v2(self):
         model = models.efficientnet_v2_m(  # s, m, l
             weights="DEFAULT"
         )
         in_features = model.classifier[1].in_features
-        model.classifier[1] = nn.Linear(in_features, num_classes)  # type: ignore as it is a sequential, able to be indexed
+        model.classifier[1] = nn.Linear(in_features, self.num_classes)  # type: ignore as it is a sequential, able to be indexed
 
         self.optimizer = torch.optim.Adam(
             model.parameters(), lr=self.lr, weight_decay=self.weight_decay
         )
         return model.to(self.device)
 
-    def _build_densenet(self, num_classes):
+    def _build_densenet(self):
         model = models.densenet121(
             weights="DEFAULT"
         )  # may want to find a cnn not trained on imagenet
         in_features = model.classifier.in_features
-        model.classifier = nn.Linear(in_features, num_classes)
+        model.classifier = nn.Linear(in_features, self.num_classes)
 
         self.optimizer = torch.optim.Adam(
             model.parameters(), lr=self.lr, weight_decay=self.weight_decay
         )
         return model.to(self.device)
 
-    def _build_convnext(self, num_classes):
+    def _build_convnext(self):
         model = models.convnext_tiny(
             weights="DEFAULT"
         )  # convnext v2 exists not in pytorch, different sizes of that up to "huge" ~660 mil
@@ -247,11 +263,11 @@ class TrainCnn:
         in_features = (
             model.classifier[2].in_features
         )  # ConvNeXt classifier has a sequential with layers; layer 2 is Linear
-        model.classifier[2] = nn.Linear(in_features, num_classes)  # type: ignore as it is a sequential, able to be indexed
+        model.classifier[2] = nn.Linear(in_features, self.num_classes)  # type: ignore as it is a sequential, able to be indexed
 
         self.optimizer = torch.optim.Adam(
             model.parameters(), lr=self.lr, weight_decay=self.weight_decay
-        )
+        ) 
         return model.to(self.device)
 
     def save_model(self):
@@ -276,25 +292,33 @@ class TrainCnn:
         )
         out_file.write(f"Training using seed: {seed}\n")
 
+        if self.classification_type == "multi_class":
+            accuracy_metric = Accuracy(task="multiclass", num_classes=self.num_classes).to(self.device)
+        elif self.classification_type == "binary":
+            accuracy_metric = Accuracy(task="binary").to(self.device)
+        elif self.classification_type == "multi_label":
+            accuracy_metric = Accuracy(task="multilabel", num_labels=self.num_classes).to(self.device)
+        else:
+            raise Exception("Not a type of classification")
+        
         self.model.train()
         warmup_step_counter = 0
         for epoch in range(self.num_epochs):
             epoch_loss = 0.0
-            correct = 0
-            total = 0
 
             for batch_idx, batch in enumerate(
                 tqdm(self.train_loader, desc=f"Epoch {epoch + 1}/{self.num_epochs}")
             ):
                 inputs = batch["image"].to(self.device, non_blocking=True)
                 labels = batch["label"].to(self.device, non_blocking=True)
-
+ 
                 outputs = self.model(inputs)  # forward pass
-
+                
                 loss = self.criterion(outputs, labels)
+                self.optimizer.zero_grad()  # type: ignore as optimizer is instantiated
                 loss.backward()
                 self.optimizer.step()  # type: ignore
-
+                
                 print(f"Loading batch: {batch_idx}")
                 if (
                     self.warmup_scheduler is not None
@@ -310,16 +334,25 @@ class TrainCnn:
                 current_lr = self.optimizer.param_groups[0]["lr"]  # type: ignore
                 print(f"Learning rate after batch {batch_idx + 1}: {current_lr:.6f}")
 
-                self.optimizer.zero_grad()  # type: ignore as optimizer is instantiated
-
                 epoch_loss += loss.item()
-                _, preds = torch.max(
-                    outputs, 1
-                )  # class with max probability for each sample in batch
-                correct += (preds == labels).sum().item()
-                total += labels.size(0)
 
-            acc = 100 * correct / total
+                if self.classification_type == "binary":
+                    probs = torch.sigmoid(outputs)
+                    preds = (probs > 0.5).long()
+                elif self.classification_type == "multi_class":
+                    probs = torch.softmax(outputs, dim=1)
+                    _, preds = torch.max(outputs, 1)
+                elif self.classification_type == "multi_label":
+                    probs = torch.sigmoid(outputs)
+                    preds = (probs > 0.5).float()
+                else:
+                    raise Exception("Not a type of classification")
+                
+                preds = preds.to(self.device)
+
+                accuracy_metric.update(preds, labels)
+
+            acc = accuracy_metric.compute() * 100
             print(
                 f"Epoch {epoch + 1}:\nTraining Loss: {epoch_loss / len(self.train_loader):.4f} | Training Accuracy: {acc:.2f}%"
             )
@@ -351,9 +384,16 @@ class TrainCnn:
 
     def validate(self, out_file):
         self.model.eval()
-        correct = 0
-        total = 0
         valid_loss = 0
+
+        if self.classification_type == "multi_class":
+            accuracy_metric = Accuracy(task="multiclass", num_classes=self.num_classes).to(self.device)
+        elif self.classification_type == "binary":
+            accuracy_metric = Accuracy(task="binary").to(self.device)
+        elif self.classification_type == "multi_label":
+            accuracy_metric = Accuracy(task="multilabel", num_labels=self.num_classes).to(self.device)
+        else:
+            raise Exception("Not a type of classification")
 
         with torch.no_grad():
             for batch in self.eval_loader:
@@ -365,11 +405,23 @@ class TrainCnn:
                 loss = self.criterion(outputs, labels)
 
                 valid_loss += loss.item()
-                _, preds = torch.max(outputs, 1)
-                correct += (preds == labels).sum().to(self.device)
-                total += labels.size(0)
 
-        acc = 100 * correct / total
+                if self.classification_type == "binary":
+                    probs = torch.sigmoid(outputs)
+                    preds = (probs > 0.5).long()
+                elif self.classification_type == "multi_class":
+                    probs = torch.softmax(outputs, dim=1)
+                    _, preds = torch.max(outputs, 1)
+                elif self.classification_type == "multi_label":
+                    probs = torch.sigmoid(outputs)
+                    preds = (probs > 0.5).float()
+                else:
+                    raise Exception("Not a type of classification")
+                
+                accuracy_metric.update(preds, labels)
+
+        acc = accuracy_metric.compute() * 100
+        accuracy_metric.reset()
         avg_loss = valid_loss / len(self.eval_loader)
         print(f"Validation Loss: {avg_loss:.4f} | Validation Accuracy: {acc:.2f}%\n\n")
         out_file.write(
@@ -378,7 +430,6 @@ class TrainCnn:
 
         self.model.train()
         return avg_loss
-
 
 def main():
     try:

@@ -11,6 +11,10 @@ efficientnet_v2:
       cosine_annealing:
         T_0: 15 # number of epochs it takes from max to min lr; inside batch loop lr is calculated using batch indexes
         eta_min: .0001
+      geo_transformation:
+        "rand_horiz_flip"
+      criterion:
+        "bce_with_logits"
 
   pathology:
     data:
@@ -24,19 +28,27 @@ efficientnet_v2:
       cosine_annealing:
         T_0: 15 # number of epochs it takes from max to min lr; inside batch loop lr is calculated using batch indexes
         eta_min: .0001
+      geo_transformation:
 
-  retinal::
+      criterion:
+        "cross_entropy"
+
+  retinal:
     data:
       batch_size: 64
 
     training:
       lr: 0.001
       epochs: 18
-      weight_decay: .0001
+      weight_decay: .003
       warmup_epochs: 3 # num warmup epochs, stepped per batch
       cosine_annealing:
         T_0: 15 # number of epochs it takes from max to min lr; inside batch loop lr is calculated using batch indexes
         eta_min: .0001
+      geo_transformation:
+        "rand_horiz_flip"
+      criterion:
+        "cross_entropy"
 
 densenet: # apparantly needs more epochs than efficientnet v2
   chestxray:
@@ -46,11 +58,15 @@ densenet: # apparantly needs more epochs than efficientnet v2
     training:
       lr: 0.0005
       epochs: 30
-      weight_decay: .0001
+      weight_decay: .0005
       warmup_epochs: 5 # num warmup epochs, stepped per batch
       cosine_annealing:
         T_0: 25
         eta_min: .00005
+      geo_transformation:
+        "rand_horiz_flip"
+      criterion:
+        "bce_with_logits"
 
   pathology:
     data:
@@ -59,11 +75,14 @@ densenet: # apparantly needs more epochs than efficientnet v2
     training:
       lr: 0.0005
       epochs: 30
-      weight_decay: .0001
+      weight_decay: .0005
       warmup_epochs: 5 # num warmup epochs, stepped per batch
       cosine_annealing:
         T_0: 25
         eta_min: .00005
+      geo_transformation:
+      criterion:
+        "cross_entropy"
 
   retinal:
     data:
@@ -72,11 +91,15 @@ densenet: # apparantly needs more epochs than efficientnet v2
     training:
       lr: 0.0005
       epochs: 30
-      weight_decay: .0001
+      weight_decay: .01
       warmup_epochs: 5 # num warmup epochs, stepped per batch
       cosine_annealing:
         T_0: 25
         eta_min: .00005
+      geo_transformation:
+        "rand_horiz_flip"
+      criterion:
+        "cross_entropy"
 
 convnext: # often uses a cosine decay schedule
   chestxray:
@@ -91,6 +114,10 @@ convnext: # often uses a cosine decay schedule
       cosine_annealing:
         T_0: 25
         eta_min: .0001
+      geo_transformation:
+        "rand_horiz_flip"
+      criterion:
+        "bce_with_logits"
 
   pathology:
     data:
@@ -99,22 +126,29 @@ convnext: # often uses a cosine decay schedule
     training:
       lr: 0.001
       epochs: 30
-      weight_decay: .005
+      weight_decay: .001
       warmup_epochs: 5 # num warmup epochs, stepped per batch
       cosine_annealing:
         T_0: 25
         eta_min: .0001
+      geo_transformation:
+      criterion:
+        "cross_entropy"
 
   retinal:
     data:
       batch_size: 64
 
     training:
-      lr: 0.001
+      lr: 0.0001
       epochs: 30
       weight_decay: .01
       warmup_epochs: 5 # num warmup epochs, stepped per batch
       cosine_annealing:
         T_0: 25
-        eta_min: .0001
+        eta_min: .00001
+      geo_transformation:
+        "rand_horiz_flip"
+      criterion:
+        "cross_entropy"
 

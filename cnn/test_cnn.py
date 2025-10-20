@@ -10,6 +10,15 @@ import argparse
 import os
 import sys
 
+import torch.nn.functional as F
+from sklearn.metrics import roc_curve
+from torchmetrics.classification import (
+    Accuracy, MulticlassF1Score, BinaryF1Score, MultilabelF1Score,
+    MulticlassAUROC, BinaryAUROC, MultilabelAUROC,
+    MulticlassAveragePrecision, BinaryAveragePrecision, MultilabelAveragePrecision,
+    CalibrationError
+)
+
 sys.path.append("..")
 from data.makedatasets.datasets import (
     RetinalImageDataset,
@@ -87,9 +96,10 @@ class TestCnn:
         test_dataset = dataset_maker.make_cnn_dataset(
             data_args={
                 "dataset_type": "test",
+                "model_name": self.name,
+                "dataset_name": self.dataset_name,
                 "data_dir": args.data_dir,
                 "metadata_dir": args.metadata_dir,
-                "model_name": self.name,
             },
             dataset_class=DATASET_CLASSES[self.dataset_name],
         )
@@ -102,25 +112,27 @@ class TestCnn:
             pin_memory=True,
         )
 
-        num_classes = self.test_loader.dataset.get_num_classes()  # type: ignore as all the datasets have get_num_classes
+        self.classification_type = test_dataset.get_classification_type()
+
+        self.num_classes = self.test_loader.dataset.get_num_classes()  # type: ignore as all the datasets have get_num_classes
 
         if self.name == "efficientnet_v2":
-            self.model = self._build_efficientnet_v2(num_classes)
+            self.model = self._build_efficientnet_v2()
         elif self.name == "densenet":
-            self.model = self._build_densenet(num_classes)
+            self.model = self._build_densenet()
         elif self.name == "convnext":
-            self.model = self._build_convnext(num_classes)
+            self.model = self._build_convnext()
 
-    def _build_efficientnet_v2(self, num_classes):
+    def _build_efficientnet_v2(self):
         zero_shot = False
         if zero_shot:
             model = models.efficientnet_v2_m(weights="DEFAULT")
             in_features = model.classifier[1].in_features
-            model.classifier[1] = nn.Linear(in_features, num_classes)  # type: ignore as it is a sequential, able to be indexed
+            model.classifier[1] = nn.Linear(in_features, self.num_classes)  # type: ignore as it is a sequential, able to be indexed
         else:
             model = models.efficientnet_v2_m()
             in_features = model.classifier[1].in_features
-            model.classifier[1] = nn.Linear(in_features, num_classes)  # type: ignore as it is a sequential, able to be indexed
+            model.classifier[1] = nn.Linear(in_features, self.num_classes)  # type: ignore as it is a sequential, able to be indexed
             model.load_state_dict(
                 torch.load(
                     os.path.join(
@@ -134,16 +146,16 @@ class TestCnn:
         model.eval()
         return model.to(self.device)
 
-    def _build_densenet(self, num_classes):
+    def _build_densenet(self):
         zero_shot = False
         if zero_shot:
             model = models.densenet121(weights="DEFAULT")
             in_features = model.classifier.in_features
-            model.classifier = nn.Linear(in_features, num_classes)  # type: ignore as it is a sequential, able to be indexed
+            model.classifier = nn.Linear(in_features, self.num_classes)  # type: ignore as it is a sequential, able to be indexed
         else:
             model = models.densenet121()
             in_features = model.classifier.in_features
-            model.classifier = nn.Linear(in_features, num_classes)  # type: ignore as it is a sequential, able to be indexed
+            model.classifier = nn.Linear(in_features, self.num_classes)  # type: ignore as it is a sequential, able to be indexed
             model.load_state_dict(
                 torch.load(
                     os.path.join(
@@ -157,16 +169,16 @@ class TestCnn:
         model.eval()
         return model.to(self.device)
 
-    def _build_convnext(self, num_classes):
+    def _build_convnext(self):
         zero_shot = False
         if zero_shot:
             model = models.convnext_tiny(weights="DEFAULT")
             in_features = model.classifier[2].in_features
-            model.classifier[2] = nn.Linear(in_features, num_classes)  # type: ignore as it is a sequential, able to be indexed
+            model.classifier[2] = nn.Linear(in_features, self.num_classes)  # type: ignore as it is a sequential, able to be indexed
         else:
             model = models.convnext_tiny()
             in_features = model.classifier[2].in_features
-            model.classifier[2] = nn.Linear(in_features, num_classes)  # type: ignore as it is a sequential, able to be indexed
+            model.classifier[2] = nn.Linear(in_features, self.num_classes)  # type: ignore as it is a sequential, able to be indexed
             model.load_state_dict(
                 torch.load(
                     os.path.join(
@@ -181,8 +193,35 @@ class TestCnn:
         return model.to(self.device)
 
     def test(self):
-        total = 0
-        correct = 0
+        all_probs = []
+        all_preds = []
+        all_labels = []
+        all_outputs = []
+
+        if self.classification_type == "multi_class":
+            accuracy_metric = Accuracy(task="multiclass", num_classes=self.num_classes).to(self.device)
+            f1_metric = MulticlassF1Score(num_classes=self.num_classes, average='macro').to(self.device)
+            auc_metric = MulticlassAUROC(num_classes=self.num_classes, average='macro').to(self.device)
+            auprc_metric = MulticlassAveragePrecision(num_classes=self.num_classes, average="macro").to(self.device)
+            ece_metric = CalibrationError(task="multiclass", num_classes=self.num_classes, n_bins=15).to(self.device)
+
+        elif self.classification_type == "binary":
+            accuracy_metric = Accuracy(task="binary").to(self.device)
+            f1_metric = BinaryF1Score().to(self.device)
+            auc_metric = BinaryAUROC().to(self.device)
+            auprc_metric = BinaryAveragePrecision().to(self.device)
+            ece_metric = CalibrationError(task="binary", n_bins=15).to(self.device)
+
+        elif self.classification_type == "multi_label":
+            accuracy_metric = Accuracy(task="multilabel", num_labels=self.num_classes).to(self.device)
+            f1_metric = MultilabelF1Score(num_labels=self.num_classes, average='macro').to(self.device)
+            auc_metric = MultilabelAUROC(num_labels=self.num_classes, average='macro').to(self.device)
+            auprc_metric = MultilabelAveragePrecision(num_labels=self.num_classes, average="macro").to(self.device)
+            ece_metric = CalibrationError(task="multilabel", num_classes=self.num_classes, n_bins=15).to(self.device)
+
+        else:
+            raise Exception("Not a valid classification type")
+
         with torch.no_grad():
             for batch in tqdm(
                 self.test_loader,
@@ -192,10 +231,27 @@ class TestCnn:
                 labels = batch["label"].to(self.device)
 
                 outputs = self.model(inputs)  # forward pass
-                _, preds = torch.max(outputs, 1)
+ 
+                if self.classification_type == "binary":
+                    probs = torch.sigmoid(outputs)
+                    preds = (probs > 0.5).long()
+                elif self.classification_type == "multi_class":
+                    probs = torch.softmax(outputs, dim=1)
+                    _, preds = torch.max(outputs, 1)
+                elif self.classification_type == "multi_label":
+                    probs = torch.sigmoid(outputs)
+                    preds = (probs > 0.5).float()
+                else:
+                    raise Exception("Not a type of classification")
+       
+                preds = preds.to(self.device)
+                labels = labels.to(self.device)
 
-                correct += (preds == labels).sum().item()
-                total += labels.size(0)
+                all_probs.append(probs)
+                all_preds.append(preds)
+                all_labels.append(labels)
+                all_outputs.append(outputs)
+                
 
         print("\nCuda memory allocated (GB):", torch.cuda.memory_allocated() / 1024**3)
         print(
@@ -203,8 +259,64 @@ class TestCnn:
             torch.cuda.max_memory_reserved() / 1024**3,
             "\n",
         )
-        acc = 100 * correct / total
-        print(f"{correct} / {total} correct\nAccuracy: {acc:.2f}%")
+        
+        all_probs = torch.cat(all_probs)
+        all_preds = torch.cat(all_preds)
+        all_labels = torch.cat(all_labels)
+        all_outputs = torch.cat(all_outputs)
+
+        from collections import Counter
+        print("Class distribution in test set:", Counter(all_labels.tolist()))
+        
+        accuracy_metric.update(all_preds, all_labels)
+        auprc_metric.update(all_probs, all_labels)
+        auc_metric.update(all_probs, all_labels)
+        ece_metric.update(all_probs, all_labels)
+        f1_metric.update(all_preds, all_labels)
+
+        acc = accuracy_metric.compute() * 100
+        accuracy_metric.reset()
+        print(f"Accuracy: {acc:.2f}%")
+        macro_auc = auc_metric.compute()
+        auc_metric.reset()
+        print(f"Macro-AUC: {macro_auc:.4f}")
+        macro_auprc = auprc_metric.compute()
+        auprc_metric.reset()
+        print(f"Macro-AUPRC: {macro_auprc:.4f}")
+        ece = ece_metric.compute()
+        ece_metric.reset()
+        print(f"ECE: {ece}")
+        f1_score = f1_metric.compute()
+        f1_metric.reset()
+        print(f"Macro F1 Score: {f1_score:.4f}")
+
+        if self.classification_type == "multi_class":
+            nll = F.cross_entropy(all_outputs, all_labels, reduction="mean").item()
+        elif self.classification_type == "binary" or self.classification_type == "multi_label":
+            nll = F.binary_cross_entropy_with_logits(all_outputs, all_labels.float(), reduction="mean").item()
+        else:
+            raise Exception("Not a valid classification type")
+        print(f"Negative Log-Likelihood: {nll:.4f}")
+
+        if self.classification_type == "binary":
+            all_probs_np = all_probs.numpy().flatten()
+            all_labels_np = all_labels.numpy().flatten()
+
+            fpr, tpr, thresholds = roc_curve(all_labels_np, all_probs_np)
+            specificity = 1 - fpr
+            idx = (np.abs(specificity - 0.90)).argmin()
+            sensitivity_at_90_specificity = tpr[idx]
+            print(f"Sensitivity at 90% specificity: {sensitivity_at_90_specificity:.4f}")
+        else:
+            sensitivity_at_90_specificity = "Only available for binary classification" 
+            print(f"Sensitivity at 90% specificity: {sensitivity_at_90_specificity}")
+
+        if self.classification_type == "multi_class":
+            labels_one_hot = torch.nn.functional.one_hot(all_labels.long(), num_classes=all_probs.shape[1]).float()
+            brier_score = torch.mean((all_probs - labels_one_hot) ** 2).item()
+        else:
+            brier_score = torch.mean((all_probs - all_labels.float()) ** 2).item()
+        print(f"Brier Score: {brier_score:.4f}")
 
         os.makedirs("results", exist_ok=True)
         with open(
@@ -213,10 +325,14 @@ class TestCnn:
             ),
             "w",
         ) as out_file:
-            out_file.write(
-                f"Inference with\n{correct} / {total} correct\nAccuracy: {acc:.2f}%"
-            )
-
+            out_file.write(f"Accuracy: {acc:.2f}%\n") 
+            out_file.write(f"Macro-AUC: {macro_auc:.4f}\n")
+            out_file.write(f"Macro-AUPRC: {macro_auprc:.4f}\n")
+            out_file.write(f"Sensitivity at 90% specificity: {sensitivity_at_90_specificity}\n")
+            out_file.write(f"Brier Score: {brier_score:.4f}\n")
+            out_file.write(f"ECE: {ece:.4f}\n")
+            out_file.write(f"Negative Log-Likelihood: {nll:.4f}\n")
+            out_file.write(f"Macro F1 Score: {f1_score:.4f}\n")
 
 def main():
     try:
