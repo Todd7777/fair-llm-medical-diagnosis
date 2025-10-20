@@ -103,7 +103,7 @@ def main():
     combined_prompt = (
         f'First, you were asked: "{training_prompt}" about images {training_images}. '
         f'You answered: "{resp1}".\n\n'
-        f"The ground truth, with the last column of each being support devices(ignore them when comparing to yours):\n{ground_truth_text}\n\n"
+        f"The ground truth:\n{ground_truth_text}\n\n"
         f"Here are the new test images: {testing_images}. {testing_prompt}"
     )
 
