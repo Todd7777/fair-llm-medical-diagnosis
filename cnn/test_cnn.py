@@ -217,8 +217,7 @@ class TestCnn:
             f1_metric = MultilabelF1Score(num_labels=self.num_classes, average='macro').to(self.device)
             auc_metric = MultilabelAUROC(num_labels=self.num_classes, average='macro').to(self.device)
             auprc_metric = MultilabelAveragePrecision(num_labels=self.num_classes, average="macro").to(self.device)
-            ece_metric = CalibrationError(task="multilabel", num_classes=self.num_classes, n_bins=15).to(self.device)
-
+            ece_metric = None
         else:
             raise Exception("Not a valid classification type")
 
@@ -265,13 +264,17 @@ class TestCnn:
         all_labels = torch.cat(all_labels)
         all_outputs = torch.cat(all_outputs)
 
-        from collections import Counter
-        print("Class distribution in test set:", Counter(all_labels.tolist()))
+        if self.classification_type == "binary" or self.classification_type == "multi_class":
+            unique, counts = torch.unique(all_labels, return_counts=True)
+            print("Class distribution in test set:", dict(zip(unique.tolist(), counts.cpu().tolist())))
+        elif self.classification_type == "multi_label":
+            class_counts = torch.sum(all_labels, dim=0).to(torch.int)
+            print("Class distribution in test set:", class_counts.cpu().tolist())
         
+        all_labels = all_labels.to(torch.long)
         accuracy_metric.update(all_preds, all_labels)
         auprc_metric.update(all_probs, all_labels)
         auc_metric.update(all_probs, all_labels)
-        ece_metric.update(all_probs, all_labels)
         f1_metric.update(all_preds, all_labels)
 
         acc = accuracy_metric.compute() * 100
@@ -283,9 +286,6 @@ class TestCnn:
         macro_auprc = auprc_metric.compute()
         auprc_metric.reset()
         print(f"Macro-AUPRC: {macro_auprc:.4f}")
-        ece = ece_metric.compute()
-        ece_metric.reset()
-        print(f"ECE: {ece}")
         f1_score = f1_metric.compute()
         f1_metric.reset()
         print(f"Macro F1 Score: {f1_score:.4f}")
@@ -307,9 +307,25 @@ class TestCnn:
             idx = (np.abs(specificity - 0.90)).argmin()
             sensitivity_at_90_specificity = tpr[idx]
             print(f"Sensitivity at 90% specificity: {sensitivity_at_90_specificity:.4f}")
-        else:
+
+            ece_metric.update(all_probs, all_labels)
+            ece = ece_metric.compute()
+            ece_metric.reset()
+            print(f"ECE: {ece:4f}")
+        elif self.classification_type == "multi_class":
             sensitivity_at_90_specificity = "Only available for binary classification" 
             print(f"Sensitivity at 90% specificity: {sensitivity_at_90_specificity}")
+
+            ece_metric.update(all_probs, all_labels)
+            ece = ece_metric.compute()
+            ece_metric.reset()
+            print(f"ECE: {ece:4f}")
+        elif self.classification_type == "multi_label":
+            sensitivity_at_90_specificity = "Only available for binary classification" 
+            print(f"Sensitivity at 90% specificity: {sensitivity_at_90_specificity}")
+        
+            ece = "Not available for multi label classification"
+            print(f"ECE: {ece}")
 
         if self.classification_type == "multi_class":
             labels_one_hot = torch.nn.functional.one_hot(all_labels.long(), num_classes=all_probs.shape[1]).float()
@@ -330,7 +346,7 @@ class TestCnn:
             out_file.write(f"Macro-AUPRC: {macro_auprc:.4f}\n")
             out_file.write(f"Sensitivity at 90% specificity: {sensitivity_at_90_specificity}\n")
             out_file.write(f"Brier Score: {brier_score:.4f}\n")
-            out_file.write(f"ECE: {ece:.4f}\n")
+            out_file.write(f"ECE: {ece}\n")
             out_file.write(f"Negative Log-Likelihood: {nll:.4f}\n")
             out_file.write(f"Macro F1 Score: {f1_score:.4f}\n")
 

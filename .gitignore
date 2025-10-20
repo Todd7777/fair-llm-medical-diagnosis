@@ -1,3 +1,6 @@
+# Context training chestxray samples:
+vlm_context_training
+
 # Logs
 *.out
 
