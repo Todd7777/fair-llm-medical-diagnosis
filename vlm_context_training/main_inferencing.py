@@ -55,7 +55,6 @@ def main():
 
     supported_exts = (".jpg", ".jpeg", ".png")
 
-    # Load and sort training images
     training_images = sorted(
         [
             os.path.join(args.image_dir_1, f)
@@ -66,29 +65,28 @@ def main():
     if not training_images:
         raise Exception(f"No images found in {args.image_dir_1}")
 
-    # Load ground truth lines
     if not os.path.exists(args.ground_truth):
         raise Exception(f"No ground truth file found - {args.ground_truth}")
     with open(args.ground_truth, "r") as f:
         ground_truth_lines = [line.strip() for line in f.readlines()]
 
-    # Check for mismatch
     if len(ground_truth_lines) != len(training_images):
         raise Exception(
             "Mismatch between number of training images and ground truth lines."
         )
 
-    # Combine image names with ground truths
     ground_truth_text = "\n".join(
         f"{os.path.basename(img)}: {gt}"
         for img, gt in zip(training_images, ground_truth_lines)
     )
 
     print("Phase 1: Analyzing training images")
-    resp1 = model.infer(prompt=training_prompt, image_paths=training_images)
-    print("Response (phase 1):", resp1)
 
-    # Load and sort testing images
+    resp1_batches = model.batch_infer(prompt=training_prompt, image_paths=training_images)
+    resp1 = "\n\n".join(resp1_batches)
+
+    print("Combined Response (phase 1):", resp1)
+
     testing_images = sorted(
         [
             os.path.join(args.image_dir_2, f)
@@ -100,11 +98,15 @@ def main():
         raise Exception(f"No images found in {args.image_dir_2}")
 
     print("\nPhase 2: Analyzing new images with context")
+
+    training_basenames = [os.path.basename(p) for p in training_images]
+    testing_basenames = [os.path.basename(p) for p in testing_images]
+
     combined_prompt = (
-        f'First, you were asked: "{training_prompt}" about images {training_images}. '
+        f'First, you were asked: "{training_prompt}" about images {training_basenames}. '
         f'You answered: "{resp1}".\n\n'
         f"The ground truth:\n{ground_truth_text}\n\n"
-        f"Here are the new test images: {testing_images}. {testing_prompt}"
+        f"Here are the new test images: {testing_basenames}. {testing_prompt}"
     )
 
     resp2 = model.infer(
